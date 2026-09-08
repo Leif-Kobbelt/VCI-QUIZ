@@ -8,6 +8,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+<!-- KaTeX (für Formeln in Fragen/Antworten, z.B. $x^2+1$ oder $$...$$) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+<!-- Three.js (für die echten 3D-Zylinder in der Auswertung) -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+
 <!-- Firebase (compat build - simplest to use without a build step) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -93,42 +103,16 @@
   .pill.idle{ background: rgba(185,201,194,.1); color:var(--chalk-dim); }
   .live-count{ font-size:44px; font-family:'Fraunces', serif; margin: 6px 0 0; }
 
-  /* --- 3D bar chart --- */
-  /* --- 3D-Zylinder-Balkendiagramm --- */
-  /* --- 3D-Zylinder-Balkendiagramm --- */
-  .bar3d-chart{ display:flex; align-items:flex-end; gap:48px; margin: 60px 16px 16px; padding: 0 10px 24px; position:relative; }
-  .bar3d-chart::after{ content:''; position:absolute; left:0; right:0; bottom:24px; height:1px; background:linear-gradient(90deg, transparent, rgba(244,241,232,.2), transparent); }
-  .bar3d-col{ flex:1; display:flex; flex-direction:column; align-items:center; }
-  .bar3d-count{ font-family:'Fraunces', serif; font-size:22px; margin-bottom:30px; }
-  .bar3d-cyl-wrap{ width:78px; position:relative; transition:height .7s cubic-bezier(.2,.8,.2,1); }
-  .bar3d-cyl-wrap.is-correct{
-    filter:
-      drop-shadow(0 0 5px rgba(217,166,62,.95))
-      drop-shadow(0 0 14px rgba(217,166,62,.7))
-      drop-shadow(0 0 28px rgba(217,166,62,.45));
+  /* --- 3D-Balkendiagramm (echtes WebGL/Three.js-Rendering) --- */
+  .cyl3d-stage{ position:relative; width:100%; height:320px; margin: 16px 0 8px; }
+  .cyl3d-stage canvas{ display:block; width:100%; height:100%; }
+  .cyl3d-count{
+    position:absolute; transform:translate(-50%, -100%); font-family:'Fraunces', serif;
+    font-size:20px; color:var(--chalk); pointer-events:none; white-space:nowrap;
   }
-  .bar3d-cyl-top{
-    position:absolute; top:-14px; left:0; width:100%; height:28px; border-radius:50%; z-index:3;
-    filter:brightness(1.4);
-    box-shadow: inset -6px -5px 9px rgba(0,0,0,.3), inset 3px 3px 7px rgba(255,255,255,.35);
-  }
-  .bar3d-cyl-body{
-    position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;
-    box-shadow: inset 0 -16px 16px -10px rgba(0,0,0,.55);
-  }
-  .bar3d-cyl-bottom{
-    position:absolute; bottom:-11px; left:0; width:100%; height:22px; border-radius:50%; z-index:1;
-    filter:brightness(.55);
-    box-shadow: inset 4px 4px 8px rgba(0,0,0,.4);
-  }
-  .bar3d-shadow{
-    position:absolute; bottom:-22px; left:50%; width:120px; height:28px;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,.78) 0%, rgba(0,0,0,.4) 45%, rgba(0,0,0,0) 75%);
-    transform: translateX(-50%) scaleY(.42) skewX(-32deg);
-    filter: blur(1px);
-    z-index:0;
-  }
-  .bar3d-label{ margin-top:26px; font-size:12px; color:var(--chalk-dim); text-align:center; max-width:110px; line-height:1.4; min-height:34px; }
+  .cyl3d-labels{ display:flex; margin: 6px 0 0; }
+  .cyl3d-label{ flex:1; text-align:center; font-size:12px; color:var(--chalk-dim); line-height:1.4; padding:0 6px; }
+  .cyl3d-fallback{ padding:20px; text-align:center; color:var(--chalk-dim); font-size:13px; }
 
   .student-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 20px; text-align:center; }
   .waiting .display{ font-size: clamp(22px, 6vw, 30px); margin-bottom:10px; }
@@ -138,6 +122,10 @@
 
   .question-card{ max-width: 480px; width:100%; }
   .question-card .qtext{ font-size: clamp(20px, 5vw, 26px); margin-bottom:22px; line-height:1.35; }
+  .qtext img{ max-width:100%; max-height:220px; border-radius:8px; display:block; margin:12px auto; }
+  .opt-btn img{ max-height:48px; display:block; margin:2px auto; border-radius:4px; }
+  .cyl3d-label img{ max-height:28px; display:block; margin:2px auto; }
+  h2 img{ max-height:120px; border-radius:6px; vertical-align:middle; margin:4px 0; }
   .options-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
   @media (max-width:420px){ .options-grid{ grid-template-columns: 1fr; } }
   .opt-btn{
@@ -210,7 +198,8 @@ let flashStage = null;
 let flashSequenceQuizId = null;
 
 let storageError = null;
-const OPTION_COLORS = ['red','blue','yellow','green'];
+const OPTION_COLOR_HEX = [0xD2604C, 0x4A80B5, 0xD9A63E, 0x4E9B72]; // matches --red/--blue/--yellow/--green
+
 
 auth.onAuthStateChanged(user => {
   dozentUser = user;
@@ -242,6 +231,32 @@ function studentUrl(){
 
 function escapeHtml(s){
   return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------------- Rich text: Bilder + LaTeX-Formeln in Frage/Antworten ----------------
+   Text wird zuerst vollständig escaped (kein rohes HTML möglich), danach wird NUR das
+   Markdown-Bild-Muster ![Alt](https://...) durch ein <img> ersetzt, das wir selbst
+   erzeugen. LaTeX-Delimiter ($...$ und $$...$$) bleiben als Text stehen und werden erst
+   nach dem Einfügen ins DOM von KaTeX (renderRichTextInto) in Formeln umgewandelt. */
+function richTextHtml(raw){
+  let html = escapeHtml(raw);
+  html = html.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (m, alt, url) => {
+    return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+  });
+  return html;
+}
+
+function renderMathIn(el){
+  if(typeof renderMathInElement !== 'function' || !el) return;
+  try{
+    renderMathInElement(el, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$', right: '$', display: false }
+      ],
+      throwOnError: false
+    });
+  }catch(e){ console.error('KaTeX render failed', e); }
 }
 
 function storageWarningBanner(){
@@ -699,6 +714,7 @@ function renderDozentEdit(){
       <h2 style="margin-top:0;">Frage vorbereiten</h2>
       <label>Frage</label>
       <textarea oninput="updateDraftQuestion(this.value)" placeholder="Wie lautet die Frage?">${escapeHtml(draft.question)}</textarea>
+      <p class="small-note" style="margin-top:6px;">Unterstützt Bilder <code>![Alt](https://…jpg)</code> und Formeln <code>$x^2$</code> bzw. <code>$$...$$</code> (LaTeX), auch in den Antworten.</p>
       <label>Antwortmöglichkeiten (richtige Antwort markieren)</label>
       ${[0,1,2,3].map(i => `
         <div class="opt-row o${i}">
@@ -735,37 +751,51 @@ function renderDozentRun(){
 
 function renderDozentResults(){
   const r = currentQuiz.results || { counts:[0,0,0,0], total:0 };
-  const max = Math.max(1, ...r.counts);
-  const MAX_BAR_PX = 150;
-  const bars = currentQuiz.options.map((o,i) => {
-    const barPx = Math.max(16, Math.round((r.counts[i]/max) * MAX_BAR_PX));
-    const isCorrect = i === currentQuiz.correctIndex;
-    const color = `var(--${OPTION_COLORS[i]})`;
-    return `
-      <div class="bar3d-col">
-        <div class="bar3d-count">${r.counts[i]}</div>
-        <div class="bar3d-cyl-wrap ${isCorrect ? 'is-correct' : ''}" style="height:${barPx}px;">
-          <div class="bar3d-cyl-top" style="background:${color};"></div>
-          <div class="bar3d-cyl-body" style="background:linear-gradient(90deg, rgba(0,0,0,.4), rgba(255,255,255,.22) 28%, ${color} 55%, rgba(0,0,0,.45) 100%);"></div>
-          <div class="bar3d-cyl-bottom" style="background:${color};"></div>
-          <div class="bar3d-shadow"></div>
-        </div>
-        <div class="bar3d-label">${escapeHtml(o)}</div>
-      </div>
-    `;
-  }).join('');
+  const labelsHtml = currentQuiz.options.map(o => `<div class="cyl3d-label">${richTextHtml(o)}</div>`).join('');
 
   const mainBlock = `
     <div class="panel">
-      <h2 style="margin-top:0;">Ergebnis: ${escapeHtml(currentQuiz.question)}</h2>
+      <h2 style="margin-top:0;">Ergebnis: ${richTextHtml(currentQuiz.question)}</h2>
       <p class="small-note" style="margin-top:0;">${r.total} Antwort${r.total===1?'':'en'} insgesamt</p>
-      <div class="bar3d-chart">${bars}</div>
+      <div class="cyl3d-stage" id="cyl3d-stage"></div>
+      <div class="cyl3d-labels">${labelsHtml}</div>
       <div class="btn-row">
         <button class="btn" onclick="newQuestion()">Neue Frage</button>
       </div>
     </div>
   `;
   dozentShell(mainBlock);
+  renderMathIn(document.getElementById('app'));
+  mountCylinderChart(r);
+}
+
+async function mountCylinderChart(r){
+  const stage = document.getElementById('cyl3d-stage');
+  if(!stage) return;
+  try{
+    if(typeof window.renderCylinderChart !== 'function'){
+      throw new Error('3D-Renderer (Three.js) ist nicht geladen');
+    }
+    const tops = await window.renderCylinderChart(stage, {
+      counts: r.counts,
+      colors: OPTION_COLOR_HEX,
+      correctIndex: currentQuiz.correctIndex
+    });
+    tops.forEach((pos, i) => {
+      const numEl = document.createElement('div');
+      numEl.className = 'cyl3d-count';
+      numEl.style.left = pos.x + 'px';
+      numEl.style.top = (pos.y - 30) + 'px';
+      numEl.textContent = r.counts[i];
+      stage.appendChild(numEl);
+    });
+  }catch(e){
+    console.error('3D-Chart konnte nicht gerendert werden, zeige Fallback-Liste', e);
+    stage.innerHTML = `<div class="cyl3d-fallback">
+      ${currentQuiz.options.map((o,i)=>`<div style="margin-bottom:10px; text-align:left;"><strong>${r.counts[i]}</strong> — ${richTextHtml(o)}${i===currentQuiz.correctIndex ? ' <span style="color:var(--green);">(richtig)</span>' : ''}</div>`).join('')}
+    </div>`;
+    renderMathIn(stage);
+  }
 }
 
 /* =========================================================
@@ -806,18 +836,19 @@ function renderStudent(){
       <div class="student-wrap">
         ${storageWarningBanner()}
         <div class="question-card">
-          <div class="qtext">${escapeHtml(currentQuiz.question)}</div>
+          <div class="qtext">${richTextHtml(currentQuiz.question)}</div>
           <div class="options-grid">
             ${currentQuiz.options.map((o,i) => `
               <button class="opt-btn o${i} ${studentSelected===i ? 'picked' : ''}"
                 ${alreadyAnswered ? 'disabled' : ''}
-                onclick="submitAnswer(${i})">${escapeHtml(o)}</button>
+                onclick="submitAnswer(${i})">${richTextHtml(o)}</button>
             `).join('')}
           </div>
           ${alreadyAnswered ? '<p class="small-note">Antwort gesendet. Warte auf die Auswertung …</p><div class="dot-pulse"></div>' : ''}
         </div>
       </div>
     `;
+    renderMathIn(app);
     return;
   }
 
@@ -851,11 +882,12 @@ function renderStudent(){
       <div class="student-wrap">
         <div class="panel result-card">
           <div class="verdict ${wasCorrect ? 'correct' : 'wrong'}">${wasCorrect ? 'Richtig beantwortet' : 'Leider falsch'}</div>
-          <div class="answer-line">Richtige Antwort: ${escapeHtml(currentQuiz.options[currentQuiz.correctIndex])}</div>
+          <div class="answer-line">Richtige Antwort: ${richTextHtml(currentQuiz.options[currentQuiz.correctIndex])}</div>
           <p class="small-note">Warte auf die nächste Frage …</p>
         </div>
       </div>
     `;
+    renderMathIn(app);
     return;
   }
 }
@@ -879,6 +911,108 @@ function flashScreen(color, title, sub){
     </div>
   `;
 }
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+
+  function worldToScreen(vec3, camera, width, height){
+    const v = vec3.clone().project(camera);
+    return { x: (v.x * 0.5 + 0.5) * width, y: (-v.y * 0.5 + 0.5) * height };
+  }
+
+  function makeGlowTexture(){
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  async function renderCylinderChart(container, data){
+    const width = container.clientWidth || 600;
+    const height = container.clientHeight || 320;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(28, width / height, 0.1, 100);
+    camera.position.set(0, 3.8, 12.5);
+    camera.lookAt(0, 1.1, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.05);
+    dirLight.position.set(4, 8, 5);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.camera.left = -8;
+    dirLight.shadow.camera.right = 8;
+    dirLight.shadow.camera.top = 8;
+    dirLight.shadow.camera.bottom = -8;
+    scene.add(dirLight);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(30, 30),
+      new THREE.MeshStandardMaterial({ color: 0x16302a, roughness: 1, metalness: 0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const n = data.counts.length;
+    const spacing = 3.1;
+    const startX = -spacing * (n - 1) / 2;
+    const maxCount = Math.max(1, ...data.counts);
+    const maxHeight = 4.0;
+    const radius = 0.85;
+
+    const tops = [];
+    for(let i = 0; i < n; i++){
+      const h = Math.max(0.35, (data.counts[i] / maxCount) * maxHeight);
+      const x = startX + i * spacing;
+
+      if(i === data.correctIndex){
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: makeGlowTexture(),
+          color: 0xD9A63E,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        }));
+        glow.scale.set(3.3, 3.9, 1);
+        glow.position.set(x, h / 2, -0.7);
+        scene.add(glow);
+      }
+
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, h, 32),
+        new THREE.MeshStandardMaterial({ color: data.colors[i], roughness: 0.45, metalness: 0.15 })
+      );
+      mesh.position.set(x, h / 2, 0);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+
+      tops.push(worldToScreen(new THREE.Vector3(x, h, 0), camera, width, height));
+    }
+
+    renderer.render(scene, camera);
+    return tops;
+  }
+
+  window.renderCylinderChart = renderCylinderChart;
 </script>
 </body>
 </html>
