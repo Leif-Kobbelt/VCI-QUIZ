@@ -107,11 +107,12 @@
   .cyl3d-stage{ position:relative; width:100%; height:320px; margin: 16px 0 8px; }
   .cyl3d-stage canvas{ display:block; width:100%; height:100%; }
   .cyl3d-count{
-    position:absolute; transform:translate(-50%, -100%); font-family:'Fraunces', serif;
-    font-size:20px; color:var(--chalk); pointer-events:none; white-space:nowrap;
+    position:absolute; font-family:'Fraunces', serif;
+    font-size:22px; color:var(--chalk); pointer-events:none; white-space:nowrap;
   }
-  .cyl3d-labels{ display:flex; margin: 6px 0 0; }
-  .cyl3d-label{ flex:1; text-align:center; font-size:12px; color:var(--chalk-dim); line-height:1.4; padding:0 6px; }
+  .cyl3d-count.on-bar{ color:#fff; font-weight:700; text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.4); }
+  .cyl3d-labels{ position:relative; width:100%; min-height:54px; margin-top:16px; }
+  .cyl3d-label{ position:absolute; top:0; transform:translateX(-50%); width:130px; text-align:center; font-size:12px; color:var(--chalk-dim); line-height:1.4; }
   .cyl3d-fallback{ padding:20px; text-align:center; color:var(--chalk-dim); font-size:13px; }
 
   .student-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 20px; text-align:center; }
@@ -187,7 +188,9 @@ const DOZENT_HASH = '#dozent-k7q9wnx24pf51zt';
 const studentId = 'stu_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 let dozentUser = null;
 let dozentPhase = 'edit'; // 'edit' | 'run' | 'results'
-let draft = { question:'', options:['','','',''], correctIndex:null };
+let questionList = [];    // [{question, options:[4], correctIndex}, ...] - alle vorbereiteten Fragen
+let currentQuestionIndex = 0;
+let editForm = null;      // null = Fragenliste anzeigen; sonst {index:n|null, question, options, correctIndex}
 let currentQuiz = null;
 let liveCount = 0;
 let answersListenerRef = null;
@@ -573,46 +576,91 @@ function doLogout(){
 async function loadDozentData(){
   storageError = null;
   try{
+    const qSnap = await db.ref('quiz/questions').once('value');
+    questionList = qSnap.val() || [];
+    const idxSnap = await db.ref('quiz/session/currentIndex').once('value');
+    currentQuestionIndex = idxSnap.val() || 0;
+    if(currentQuestionIndex >= questionList.length){ currentQuestionIndex = Math.max(0, questionList.length - 1); }
     const snap = await db.ref('quiz/current').once('value');
     currentQuiz = snap.val();
-    const draftSnap = await db.ref('quiz/draft').once('value');
-    if(draftSnap.val()){ draft = draftSnap.val(); }
   }catch(e){ storageError = String(e && e.message || e); }
 
+  editForm = null;
   if(currentQuiz && currentQuiz.status === 'open'){ dozentPhase = 'run'; }
   else if(currentQuiz && currentQuiz.status === 'closed'){ dozentPhase = 'results'; }
-  else { dozentPhase = 'edit'; }
+  else { dozentPhase = questionList.length ? 'run' : 'edit'; }
 
   renderDozent();
   if(currentQuiz && currentQuiz.status === 'open'){ attachAnswerListener(currentQuiz.quizId); }
 }
 
-let draftSaveTimer = null;
-function scheduleDraftSave(){
-  clearTimeout(draftSaveTimer);
-  draftSaveTimer = setTimeout(() => { db.ref('quiz/draft').set(draft).catch(()=>{}); }, 500);
+/* ---------------- Fragenliste bearbeiten ---------------- */
+function openQuestionForm(index){
+  if(index === null || index === undefined){
+    editForm = { index: null, question:'', options:['','','',''], correctIndex:null };
+  } else {
+    const q = questionList[index];
+    editForm = { index, question:q.question, options:[...q.options], correctIndex:q.correctIndex };
+  }
+  renderDozent();
 }
-function updateDraftQuestion(v){ draft.question = v; scheduleDraftSave(); }
-function updateDraftOption(i, v){ draft.options[i] = v; scheduleDraftSave(); }
-function updateDraftCorrect(i){ draft.correctIndex = i; scheduleDraftSave(); renderDozent(); }
+function cancelQuestionForm(){ editForm = null; renderDozent(); }
 
-function draftIsValid(){
-  return draft.question.trim().length > 0
-    && draft.options.every(o => o.trim().length > 0)
-    && draft.correctIndex !== null && draft.correctIndex !== undefined;
+function updateFormQuestion(v){ editForm.question = v; }
+function updateFormOption(i, v){ editForm.options[i] = v; }
+function updateFormCorrect(i){ editForm.correctIndex = i; renderDozent(); }
+
+function formIsValid(f){
+  return f.question.trim().length > 0
+    && f.options.every(o => o.trim().length > 0)
+    && f.correctIndex !== null && f.correctIndex !== undefined;
 }
 
-function finishEditing(){ if(!draftIsValid()) return; dozentPhase = 'run'; renderDozent(); }
-function backToEditing(){ dozentPhase = 'edit'; renderDozent(); }
+async function saveQuestionForm(){
+  const f = editForm;
+  if(!formIsValid(f)) return;
+  const entry = { question: f.question.trim(), options: f.options.map(o => o.trim()), correctIndex: f.correctIndex };
+  if(f.index === null){ questionList.push(entry); }
+  else { questionList[f.index] = entry; }
+  try{ await db.ref('quiz/questions').set(questionList); }
+  catch(e){ storageError = String(e && e.message || e); }
+  editForm = null;
+  renderDozent();
+}
+
+function deleteQuestion(i){
+  questionList.splice(i, 1);
+  db.ref('quiz/questions').set(questionList).catch(()=>{});
+  if(currentQuestionIndex >= questionList.length){ currentQuestionIndex = Math.max(0, questionList.length - 1); }
+  renderDozent();
+}
+
+function moveQuestion(i, dir){
+  const j = i + dir;
+  if(j < 0 || j >= questionList.length) return;
+  [questionList[i], questionList[j]] = [questionList[j], questionList[i]];
+  db.ref('quiz/questions').set(questionList).catch(()=>{});
+  renderDozent();
+}
+
+function startLecture(){
+  if(!questionList.length) return;
+  editForm = null;
+  dozentPhase = 'run';
+  renderDozent();
+}
+
+function backToEditing(){ editForm = null; dozentPhase = 'edit'; renderDozent(); }
 
 async function launchQuiz(){
-  if(!draftIsValid()) return;
+  const q = questionList[currentQuestionIndex];
+  if(!q) return;
   const quizId = 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   currentQuiz = {
     quizId, status: 'open',
-    question: draft.question.trim(),
-    options: draft.options.map(o => o.trim()),
-    correctIndex: draft.correctIndex,
+    question: q.question,
+    options: q.options,
+    correctIndex: q.correctIndex,
     openedAt: Date.now(),
     results: null
   };
@@ -667,10 +715,11 @@ async function closeQuiz(){
   renderDozent();
 }
 
-function newQuestion(){
-  draft = { question:'', options:['','','',''], correctIndex:null };
-  db.ref('quiz/draft').set(draft).catch(()=>{});
-  dozentPhase = 'edit';
+function nextQuestion(){
+  currentQuestionIndex++;
+  db.ref('quiz/session/currentIndex').set(currentQuestionIndex).catch(()=>{});
+  currentQuiz = null;
+  dozentPhase = 'run';
   renderDozent();
 }
 
@@ -709,32 +758,69 @@ function dozentShell(inner){
 }
 
 function renderDozentEdit(){
+  if(editForm){ renderQuestionForm(); return; }
+
+  const itemsHtml = questionList.map((q,i) => `
+    <div class="panel" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:180px;">
+        <div class="small-note" style="margin-top:0;">Frage ${i+1}</div>
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${richTextHtml(q.question)}</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        ${i>0 ? `<button class="btn secondary" onclick="moveQuestion(${i},-1)" title="Nach oben">↑</button>` : ''}
+        ${i<questionList.length-1 ? `<button class="btn secondary" onclick="moveQuestion(${i},1)" title="Nach unten">↓</button>` : ''}
+        <button class="btn secondary" onclick="openQuestionForm(${i})">Bearbeiten</button>
+        <button class="btn danger" onclick="deleteQuestion(${i})">Löschen</button>
+      </div>
+    </div>
+  `).join('');
+
+  const mainBlock = `
+    <div class="panel" style="margin-bottom:10px;">
+      <h2 style="margin-top:0;">Fragen vorbereiten</h2>
+      <p class="small-note" style="margin-top:0;">${questionList.length ? questionList.length + ' Frage' + (questionList.length===1?'':'n') + ' vorbereitet.' : 'Noch keine Frage vorbereitet.'}</p>
+    </div>
+    ${itemsHtml}
+    <div class="btn-row">
+      <button class="btn secondary" onclick="openQuestionForm(null)">+ Neue Frage hinzufügen</button>
+      <button class="btn" ${questionList.length ? '' : 'disabled'} onclick="startLecture()">Weiter zur Vorlesung</button>
+    </div>
+  `;
+  dozentShell(`<div class="grid-2"><div>${mainBlock}</div><div>${renderQrBlock()}</div></div>`);
+  renderMathIn(document.getElementById('app'));
+}
+
+function renderQuestionForm(){
+  const f = editForm;
   const mainBlock = `
     <div class="panel">
-      <h2 style="margin-top:0;">Frage vorbereiten</h2>
+      <h2 style="margin-top:0;">${f.index === null ? 'Neue Frage' : 'Frage bearbeiten'}</h2>
       <label>Frage</label>
-      <textarea oninput="updateDraftQuestion(this.value)" placeholder="Wie lautet die Frage?">${escapeHtml(draft.question)}</textarea>
+      <textarea oninput="updateFormQuestion(this.value)" placeholder="Wie lautet die Frage?">${escapeHtml(f.question)}</textarea>
       <p class="small-note" style="margin-top:6px;">Unterstützt Bilder <code>![Alt](https://…jpg)</code> und Formeln <code>$x^2$</code> bzw. <code>$$...$$</code> (LaTeX), auch in den Antworten.</p>
       <label>Antwortmöglichkeiten (richtige Antwort markieren)</label>
       ${[0,1,2,3].map(i => `
         <div class="opt-row o${i}">
           <span class="opt-dot"></span>
-          <input type="text" value="${escapeHtml(draft.options[i])}" placeholder="Antwort ${i+1}" oninput="updateDraftOption(${i}, this.value)">
-          <input type="radio" name="correct" class="radio-correct" ${draft.correctIndex===i ? 'checked' : ''} onchange="updateDraftCorrect(${i})" title="Als richtige Antwort markieren">
+          <input type="text" value="${escapeHtml(f.options[i])}" placeholder="Antwort ${i+1}" oninput="updateFormOption(${i}, this.value)">
+          <input type="radio" name="correct" class="radio-correct" ${f.correctIndex===i ? 'checked' : ''} onchange="updateFormCorrect(${i})" title="Als richtige Antwort markieren">
         </div>
       `).join('')}
       <div class="btn-row">
-        <button class="btn" ${draftIsValid() ? '' : 'disabled'} onclick="finishEditing()">Fertig</button>
+        <button class="btn" ${formIsValid(f) ? '' : 'disabled'} onclick="saveQuestionForm()">Speichern</button>
+        <button class="btn secondary" onclick="cancelQuestionForm()">Abbrechen</button>
       </div>
     </div>
   `;
   dozentShell(`<div class="grid-2"><div>${mainBlock}</div><div>${renderQrBlock()}</div></div>`);
+  renderMathIn(document.getElementById('app'));
 }
 
 function renderDozentRun(){
   const isOpen = currentQuiz && currentQuiz.status === 'open';
   const mainBlock = `
     <div class="panel">
+      <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
       <div class="pill ${isOpen ? 'open' : 'idle'}">${isOpen ? 'Quiz läuft' : 'Bereit zum Starten'}</div>
       <label>Eingegangene Antworten</label>
       <div class="live-count" id="live-count-val">${isOpen ? liveCount : 0}</div>
@@ -743,7 +829,7 @@ function renderDozentRun(){
           ? '<button class="btn danger" onclick="closeQuiz()">Quiz beenden</button>'
           : '<button class="btn" onclick="launchQuiz()">Quiz starten</button>'}
       </div>
-      ${!isOpen ? '<p class="small-note"><a onclick="backToEditing()">Frage nochmal bearbeiten</a></p>' : '<p class="small-note">Frage und Antworten werden nur auf den Handys der Studierenden angezeigt.</p>'}
+      ${!isOpen ? '<p class="small-note"><a onclick="backToEditing()">Fragen verwalten</a></p>' : '<p class="small-note">Frage und Antworten werden nur auf den Handys der Studierenden angezeigt.</p>'}
     </div>
   `;
   dozentShell(`<div class="grid-2"><div>${mainBlock}</div><div>${renderQrBlock()}</div></div>`);
@@ -751,17 +837,20 @@ function renderDozentRun(){
 
 function renderDozentResults(){
   const r = currentQuiz.results || { counts:[0,0,0,0], total:0 };
-  const labelsHtml = currentQuiz.options.map(o => `<div class="cyl3d-label">${richTextHtml(o)}</div>`).join('');
+  const hasNext = currentQuestionIndex + 1 < questionList.length;
 
   const mainBlock = `
     <div class="panel">
+      <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
       <h2 style="margin-top:0;">Ergebnis: ${richTextHtml(currentQuiz.question)}</h2>
       <p class="small-note" style="margin-top:0;">${r.total} Antwort${r.total===1?'':'en'} insgesamt</p>
       <div class="cyl3d-stage" id="cyl3d-stage"></div>
-      <div class="cyl3d-labels">${labelsHtml}</div>
+      <div class="cyl3d-labels" id="cyl3d-labels"></div>
       <div class="btn-row">
-        <button class="btn" onclick="newQuestion()">Neue Frage</button>
+        ${hasNext ? '<button class="btn" onclick="nextQuestion()">Nächste Frage →</button>' : ''}
+        <button class="btn secondary" onclick="backToEditing()">Fragen verwalten</button>
       </div>
+      ${!hasNext ? '<p class="small-note">Das war die letzte vorbereitete Frage.</p>' : ''}
     </div>
   `;
   dozentShell(mainBlock);
@@ -771,29 +860,61 @@ function renderDozentResults(){
 
 async function mountCylinderChart(r){
   const stage = document.getElementById('cyl3d-stage');
+  const labelsBox = document.getElementById('cyl3d-labels');
   if(!stage) return;
   try{
     if(typeof window.renderCylinderChart !== 'function'){
       throw new Error('3D-Renderer (Three.js) ist nicht geladen');
     }
-    const tops = await window.renderCylinderChart(stage, {
+    const { tops, bases } = await window.renderCylinderChart(stage, {
       counts: r.counts,
       colors: OPTION_COLOR_HEX,
       correctIndex: currentQuiz.correctIndex
     });
-    tops.forEach((pos, i) => {
+
+    // Abstandsregel: über der Säule reservieren wir ca. eine Zeilenhöhe
+    // (Schriftgröße * 1,25), auf ein 4px-Raster gerundet. Auf der Säule
+    // platzieren wir nur, wenn oberhalb/unterhalb der Zahl noch spürbar
+    // Freiraum bleibt (Schriftgröße * 2,6 als Mindesthöhe der Säule).
+    const countFontPx = 22;
+    const gapAbove = Math.round((countFontPx * 1.25) / 4) * 4;
+    const minOnBarPx = countFontPx * 2.6;
+
+    tops.forEach((top, i) => {
+      const base = bases[i];
+      const barPx = base.y - top.y;
       const numEl = document.createElement('div');
       numEl.className = 'cyl3d-count';
-      numEl.style.left = pos.x + 'px';
-      numEl.style.top = (pos.y - 30) + 'px';
+      numEl.style.left = top.x + 'px';
       numEl.textContent = r.counts[i];
+      if(barPx >= minOnBarPx){
+        numEl.classList.add('on-bar');
+        numEl.style.top = (top.y + barPx * 0.4) + 'px';
+        numEl.style.transform = 'translate(-50%, 0)';
+      } else {
+        numEl.style.top = (top.y - gapAbove) + 'px';
+        numEl.style.transform = 'translate(-50%, -100%)';
+      }
       stage.appendChild(numEl);
     });
+
+    if(labelsBox){
+      labelsBox.innerHTML = '';
+      tops.forEach((top, i) => {
+        const labelEl = document.createElement('div');
+        labelEl.className = 'cyl3d-label';
+        labelEl.style.left = top.x + 'px';
+        labelEl.innerHTML = richTextHtml(currentQuiz.options[i]);
+        labelsBox.appendChild(labelEl);
+      });
+      renderMathIn(labelsBox);
+    }
   }catch(e){
     console.error('3D-Chart konnte nicht gerendert werden, zeige Fallback-Liste', e);
     stage.innerHTML = `<div class="cyl3d-fallback">
       ${currentQuiz.options.map((o,i)=>`<div style="margin-bottom:10px; text-align:left;"><strong>${r.counts[i]}</strong> — ${richTextHtml(o)}${i===currentQuiz.correctIndex ? ' <span style="color:var(--green);">(richtig)</span>' : ''}</div>`).join('')}
     </div>`;
+    if(labelsBox){ labelsBox.innerHTML = ''; }
     renderMathIn(stage);
   }
 }
@@ -921,80 +1042,70 @@ function flashScreen(color, title, sub){
     return { x: (v.x * 0.5 + 0.5) * width, y: (-v.y * 0.5 + 0.5) * height };
   }
 
-  function makeGlowTexture(){
-    const size = 256;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.35, 'rgba(255,255,255,0.55)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, size, size);
-    return new THREE.CanvasTexture(canvas);
-  }
-
   async function renderCylinderChart(container, data){
     const width = container.clientWidth || 600;
     const height = container.clientHeight || 320;
+    const aspect = width / height;
+
+    const n = data.counts.length;
+    const spacing = 3.9;
+    const startX = -spacing * (n - 1) / 2;
+    const maxCount = Math.max(1, ...data.counts);
+    const maxHeight = 4.0;
+    const radius = 0.85;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(28, width / height, 0.1, 100);
-    camera.position.set(0, 3.8, 12.5);
+    const vFovDeg = 28;
+    const camera = new THREE.PerspectiveCamera(vFovDeg, aspect, 0.1, 100);
+
+    // Kameraabstand hängt vom tatsächlichen Seitenverhältnis des Containers ab,
+    // damit die äußeren Säulen auch bei einem schmalen (einspaltigen) Layout
+    // nicht abgeschnitten werden, statt eine feste Position anzunehmen.
+    const neededHalfWidth = (spacing * (n - 1) / 2 + radius) * 1.18;
+    const vFovRad = vFovDeg * Math.PI / 180;
+    let camZ = neededHalfWidth / (Math.tan(vFovRad / 2) * aspect);
+    camZ = Math.max(camZ, 11);
+    camera.position.set(0, camZ * 0.3, camZ);
     camera.lookAt(0, 1.1, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Ältere, vertraute Intensitäts-Skala statt physikalisch korrekter Lumen-Werte -
+    // macht die Spotlight-Stärke unten vorhersagbar einstellbar.
+    if('useLegacyLights' in renderer){ renderer.useLegacyLights = true; }
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.05);
+    // Grundbeleuchtung bewusst gedimmt, damit die nicht angestrahlten
+    // Säulen zwar noch gut erkennbar, aber klar dunkler als die
+    // angestrahlte Säule sind.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
     dirLight.position.set(4, 8, 5);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.set(1024, 1024);
-    dirLight.shadow.camera.left = -8;
-    dirLight.shadow.camera.right = 8;
-    dirLight.shadow.camera.top = 8;
-    dirLight.shadow.camera.bottom = -8;
+    dirLight.shadow.camera.left = -9;
+    dirLight.shadow.camera.right = 9;
+    dirLight.shadow.camera.top = 9;
+    dirLight.shadow.camera.bottom = -9;
     scene.add(dirLight);
 
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, 30),
+      new THREE.PlaneGeometry(34, 34),
       new THREE.MeshStandardMaterial({ color: 0x16302a, roughness: 1, metalness: 0 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const n = data.counts.length;
-    const spacing = 3.1;
-    const startX = -spacing * (n - 1) / 2;
-    const maxCount = Math.max(1, ...data.counts);
-    const maxHeight = 4.0;
-    const radius = 0.85;
-
     const tops = [];
+    const bases = [];
     for(let i = 0; i < n; i++){
       const h = Math.max(0.35, (data.counts[i] / maxCount) * maxHeight);
       const x = startX + i * spacing;
-
-      if(i === data.correctIndex){
-        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: makeGlowTexture(),
-          color: 0xD9A63E,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending
-        }));
-        glow.scale.set(3.3, 3.9, 1);
-        glow.position.set(x, h / 2, -0.7);
-        scene.add(glow);
-      }
 
       const mesh = new THREE.Mesh(
         new THREE.CylinderGeometry(radius, radius, h, 32),
@@ -1005,11 +1116,25 @@ function flashScreen(color, title, sub){
       mesh.receiveShadow = true;
       scene.add(mesh);
 
+      if(i === data.correctIndex){
+        // Echtes Spotlight statt eines aufgeklebten Glow-Effekts: hebt sich
+        // durch reale Beleuchtung ab, korrekt von der Säule verdeckt/begrenzt,
+        // kein Farbüberlauf auf andersfarbige Nachbarsäulen möglich.
+        const spot = new THREE.SpotLight(0xFFE3A6, 3.0, 0, Math.PI / 9, 0.55, 0);
+        spot.position.set(x, h + 5, 2.6);
+        spot.target.position.set(x, h * 0.55, 0);
+        spot.castShadow = true;
+        spot.shadow.mapSize.set(512, 512);
+        scene.add(spot);
+        scene.add(spot.target);
+      }
+
       tops.push(worldToScreen(new THREE.Vector3(x, h, 0), camera, width, height));
+      bases.push(worldToScreen(new THREE.Vector3(x, 0, 0), camera, width, height));
     }
 
     renderer.render(scene, camera);
-    return tops;
+    return { tops, bases };
   }
 
   window.renderCylinderChart = renderCylinderChart;
