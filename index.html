@@ -71,6 +71,12 @@
   .grid-2{ display:grid; grid-template-columns: 1.3fr 1fr; gap:20px; align-items:start; }
   @media (max-width: 820px){ .grid-2{ grid-template-columns: 1fr; } }
 
+  .question-row{ display:grid; grid-template-columns: minmax(0,1fr) auto; align-items:center; gap:14px; margin-bottom:10px; }
+  .question-row .q-text-wrap{ min-width:0; }
+  .question-row .q-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .question-row .q-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .icon-btn{ width:40px; padding:12px 0; text-align:center; flex-shrink:0; }
+
   label{ display:block; font-size:13px; color:var(--chalk-dim); margin: 14px 0 6px; }
   textarea, input[type=text], input[type=password], input[type=email]{
     width:100%; background: var(--bg); border:1px solid var(--line); color: var(--chalk);
@@ -104,13 +110,12 @@
   .live-count{ font-size:44px; font-family:'Fraunces', serif; margin: 6px 0 0; }
 
   /* --- 3D-Balkendiagramm (echtes WebGL/Three.js-Rendering) --- */
-  .cyl3d-stage{ position:relative; width:100%; height:320px; margin: 16px 0 8px; }
+  .cyl3d-stage{ position:relative; width:100%; height:320px; margin: 16px 0 30px; }
   .cyl3d-stage canvas{ display:block; width:100%; height:100%; }
   .cyl3d-count{
     position:absolute; font-family:'Fraunces', serif;
     font-size:22px; color:var(--chalk); pointer-events:none; white-space:nowrap;
   }
-  .cyl3d-count.on-bar{ color:#fff; font-weight:700; text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.4); }
   .cyl3d-labels{ position:relative; width:100%; min-height:54px; margin-top:16px; }
   .cyl3d-label{ position:absolute; top:0; transform:translateX(-50%); width:130px; text-align:center; font-size:12px; color:var(--chalk-dim); line-height:1.4; }
   .cyl3d-fallback{ padding:20px; text-align:center; color:var(--chalk-dim); font-size:13px; }
@@ -761,14 +766,14 @@ function renderDozentEdit(){
   if(editForm){ renderQuestionForm(); return; }
 
   const itemsHtml = questionList.map((q,i) => `
-    <div class="panel" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:180px;">
+    <div class="panel question-row">
+      <div class="q-text-wrap">
         <div class="small-note" style="margin-top:0;">Frage ${i+1}</div>
-        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${richTextHtml(q.question)}</div>
+        <div class="q-text">${richTextHtml(q.question)}</div>
       </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        ${i>0 ? `<button class="btn secondary" onclick="moveQuestion(${i},-1)" title="Nach oben">↑</button>` : ''}
-        ${i<questionList.length-1 ? `<button class="btn secondary" onclick="moveQuestion(${i},1)" title="Nach unten">↓</button>` : ''}
+      <div class="q-actions">
+        <button class="btn secondary icon-btn" ${i>0 ? `onclick="moveQuestion(${i},-1)"` : 'disabled'} title="Nach oben">↑</button>
+        <button class="btn secondary icon-btn" ${i<questionList.length-1 ? `onclick="moveQuestion(${i},1)"` : 'disabled'} title="Nach unten">↓</button>
         <button class="btn secondary" onclick="openQuestionForm(${i})">Bearbeiten</button>
         <button class="btn danger" onclick="deleteQuestion(${i})">Löschen</button>
       </div>
@@ -872,29 +877,18 @@ async function mountCylinderChart(r){
       correctIndex: currentQuiz.correctIndex
     });
 
-    // Abstandsregel: über der Säule reservieren wir ca. eine Zeilenhöhe
-    // (Schriftgröße * 1,25), auf ein 4px-Raster gerundet. Auf der Säule
-    // platzieren wir nur, wenn oberhalb/unterhalb der Zahl noch spürbar
-    // Freiraum bleibt (Schriftgröße * 2,6 als Mindesthöhe der Säule).
-    const countFontPx = 22;
-    const gapAbove = Math.round((countFontPx * 1.25) / 4) * 4;
-    const minOnBarPx = countFontPx * 2.6;
+    // Der Boden aller Säulen liegt immer auf derselben Weltkoordinate (y=0),
+    // die Grundlinie ist also für jede Auswertung an derselben Bildschirm-
+    // position - deshalb reicht ein fester Abstand unterhalb dieser Linie.
+    const gapBelowBase = 16;
 
-    tops.forEach((top, i) => {
-      const base = bases[i];
-      const barPx = base.y - top.y;
+    bases.forEach((base, i) => {
       const numEl = document.createElement('div');
       numEl.className = 'cyl3d-count';
-      numEl.style.left = top.x + 'px';
+      numEl.style.left = base.x + 'px';
+      numEl.style.top = (base.y + gapBelowBase) + 'px';
+      numEl.style.transform = 'translate(-50%, 0)';
       numEl.textContent = r.counts[i];
-      if(barPx >= minOnBarPx){
-        numEl.classList.add('on-bar');
-        numEl.style.top = (top.y + barPx * 0.4) + 'px';
-        numEl.style.transform = 'translate(-50%, 0)';
-      } else {
-        numEl.style.top = (top.y - gapAbove) + 'px';
-        numEl.style.transform = 'translate(-50%, -100%)';
-      }
       stage.appendChild(numEl);
     });
 
@@ -1082,8 +1076,8 @@ function flashScreen(color, title, sub){
     // Grundbeleuchtung bewusst gedimmt, damit die nicht angestrahlten
     // Säulen zwar noch gut erkennbar, aber klar dunkler als die
     // angestrahlte Säule sind.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.42));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.38);
     dirLight.position.set(4, 8, 5);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.set(1024, 1024);
@@ -1120,7 +1114,7 @@ function flashScreen(color, title, sub){
         // Echtes Spotlight statt eines aufgeklebten Glow-Effekts: hebt sich
         // durch reale Beleuchtung ab, korrekt von der Säule verdeckt/begrenzt,
         // kein Farbüberlauf auf andersfarbige Nachbarsäulen möglich.
-        const spot = new THREE.SpotLight(0xFFE3A6, 3.0, 0, Math.PI / 9, 0.55, 0);
+        const spot = new THREE.SpotLight(0xFFE3A6, 4.6, 0, Math.PI / 9, 0.5, 0);
         spot.position.set(x, h + 5, 2.6);
         spot.target.position.set(x, h * 0.55, 0);
         spot.castShadow = true;
