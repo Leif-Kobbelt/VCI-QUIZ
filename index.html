@@ -748,6 +748,16 @@ function nextQuestion(){
   renderDozent();
 }
 
+function resetLecture(){
+  if(!confirm('Vorlesung zurücksetzen und wieder bei Frage 1 beginnen?')) return;
+  currentQuestionIndex = 0;
+  db.ref('quiz/session/currentIndex').set(0).catch(()=>{});
+  db.ref('quiz/current').remove().catch(()=>{});
+  currentQuiz = null;
+  dozentPhase = 'run';
+  renderDozent();
+}
+
 function renderQrBlock(){
   const url = studentUrl();
   const qrSvg = QRLib.generateSvg(url, 220);
@@ -845,7 +855,10 @@ function renderDozentRun(){
   const isOpen = currentQuiz && currentQuiz.status === 'open';
   const mainBlock = `
     <div class="panel">
-      <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+        <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
+        ${!isOpen && currentQuestionIndex > 0 ? '<a onclick="resetLecture()" class="small-note" style="color:var(--accent);">Zurück zu Frage 1</a>' : ''}
+      </div>
       <div class="pill ${isOpen ? 'open' : 'idle'}">${isOpen ? 'Quiz läuft' : 'Bereit zum Starten'}</div>
       <label>Eingegangene Antworten</label>
       <div class="live-count" id="live-count-val">${isOpen ? liveCount : 0}</div>
@@ -866,7 +879,10 @@ function renderDozentResults(){
 
   const mainBlock = `
     <div class="panel">
-      <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+        <p class="small-note" style="margin-top:0;">Frage ${currentQuestionIndex+1} von ${questionList.length}</p>
+        <a onclick="resetLecture()" class="small-note" style="color:var(--accent);">Zurück zu Frage 1</a>
+      </div>
       <h2 style="margin-top:0;">Ergebnis: ${richTextHtml(currentQuiz.question)}</h2>
       <p class="small-note" style="margin-top:0;">${r.total} Antwort${r.total===1?'':'en'} insgesamt</p>
       <div class="cyl3d-stage" id="cyl3d-stage"></div>
@@ -897,21 +913,20 @@ async function mountCylinderChart(r){
       correctIndex: currentQuiz.correctIndex
     });
 
-    // Der Boden aller Säulen liegt immer auf derselben Weltkoordinate (y=0),
-    // die Grundlinie ist also für jede Auswertung an derselben Bildschirm-
-    // position - deshalb reicht ein fester Abstand unterhalb dieser Linie.
-    // Zusätzlich wird die Position auf die sichtbare Bühne begrenzt, damit
-    // die Zahl niemals in die separate Beschriftungszeile darunter hineinragt,
-    // selbst wenn ein Antworttext auf zwei Zeilen umbricht.
-    const gapBelowBase = 16;
+    // Die aus der Kamera berechnete Bodenlinie (base.y) liegt bei manchen
+    // Seitenverhältnissen sehr nah am unteren Bühnenrand oder sogar knapp
+    // dahinter - deshalb verlassen wir uns für die Höhe nicht auf diesen Wert,
+    // sondern platzieren die Zahl an einem festen, spürbar innerhalb der
+    // sichtbaren Bühne liegenden Abstand vom unteren Rand. Nur die
+    // horizontale Position (base.x) kommt weiterhin aus der Projektion.
     const stageHeight = stage.clientHeight || 320;
-    const maxNumberY = stageHeight - 6;
+    const numberY = stageHeight - 46;
 
     bases.forEach((base, i) => {
       const numEl = document.createElement('div');
       numEl.className = 'cyl3d-count';
       numEl.style.left = base.x + 'px';
-      numEl.style.top = Math.min(base.y + gapBelowBase, maxNumberY) + 'px';
+      numEl.style.top = numberY + 'px';
       numEl.style.transform = 'translate(-50%, 0)';
       numEl.textContent = r.counts[i];
       stage.appendChild(numEl);
