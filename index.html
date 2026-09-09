@@ -583,11 +583,22 @@ async function loadDozentData(){
   try{
     const qSnap = await db.ref('quiz/questions').once('value');
     questionList = qSnap.val() || [];
-    const idxSnap = await db.ref('quiz/session/currentIndex').once('value');
-    currentQuestionIndex = idxSnap.val() || 0;
-    if(currentQuestionIndex >= questionList.length){ currentQuestionIndex = Math.max(0, questionList.length - 1); }
     const snap = await db.ref('quiz/current').once('value');
     currentQuiz = snap.val();
+
+    // Der gespeicherte Fortschritt (quiz/session/currentIndex) wird nur
+    // vertraut, wenn in diesem Browser-Tab bereits eine Vorlesung begonnen
+    // wurde (z.B. nach einem versehentlichen Reload mitten im Quiz). Bei
+    // jedem neuen Tab/Besuch beginnt eine frische Vorlesung immer bei der
+    // ersten Frage - sonst würde ein alter, von einer früheren Vorlesung
+    // übrig gebliebener Stand (z.B. "letzte Frage") wieder aufgegriffen.
+    if(hasLectureStartedThisSession()){
+      const idxSnap = await db.ref('quiz/session/currentIndex').once('value');
+      currentQuestionIndex = idxSnap.val() || 0;
+    } else {
+      currentQuestionIndex = 0;
+    }
+    if(currentQuestionIndex >= questionList.length){ currentQuestionIndex = Math.max(0, questionList.length - 1); }
   }catch(e){ storageError = String(e && e.message || e); }
 
   editForm = null;
@@ -597,6 +608,13 @@ async function loadDozentData(){
 
   renderDozent();
   if(currentQuiz && currentQuiz.status === 'open'){ attachAnswerListener(currentQuiz.quizId); }
+}
+
+function markLectureStarted(){
+  try{ sessionStorage.setItem('quizLectureStarted', '1'); }catch(e){}
+}
+function hasLectureStartedThisSession(){
+  try{ return sessionStorage.getItem('quizLectureStarted') === '1'; }catch(e){ return false; }
 }
 
 /* ---------------- Fragenliste bearbeiten ---------------- */
@@ -660,6 +678,8 @@ function backToEditing(){ editForm = null; dozentPhase = 'edit'; renderDozent();
 async function launchQuiz(){
   const q = questionList[currentQuestionIndex];
   if(!q) return;
+  markLectureStarted();
+  db.ref('quiz/session/currentIndex').set(currentQuestionIndex).catch(()=>{});
   const quizId = 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   currentQuiz = {
     quizId, status: 'open',
@@ -880,13 +900,18 @@ async function mountCylinderChart(r){
     // Der Boden aller Säulen liegt immer auf derselben Weltkoordinate (y=0),
     // die Grundlinie ist also für jede Auswertung an derselben Bildschirm-
     // position - deshalb reicht ein fester Abstand unterhalb dieser Linie.
+    // Zusätzlich wird die Position auf die sichtbare Bühne begrenzt, damit
+    // die Zahl niemals in die separate Beschriftungszeile darunter hineinragt,
+    // selbst wenn ein Antworttext auf zwei Zeilen umbricht.
     const gapBelowBase = 16;
+    const stageHeight = stage.clientHeight || 320;
+    const maxNumberY = stageHeight - 6;
 
     bases.forEach((base, i) => {
       const numEl = document.createElement('div');
       numEl.className = 'cyl3d-count';
       numEl.style.left = base.x + 'px';
-      numEl.style.top = (base.y + gapBelowBase) + 'px';
+      numEl.style.top = Math.min(base.y + gapBelowBase, maxNumberY) + 'px';
       numEl.style.transform = 'translate(-50%, 0)';
       numEl.textContent = r.counts[i];
       stage.appendChild(numEl);
