@@ -171,13 +171,13 @@
    (see the separate rules snippet you paste into the console).
    ========================================================= */
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY",
-  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://PASTE_YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId: "PASTE_YOUR_PROJECT",
-  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyBkntPpgajzRdI1Ty4wrFd34WqG8kxdQxw",
+  authDomain: "online-quiz-v1.firebaseapp.com",
+  databaseURL: "https://online-quiz-v1-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "online-quiz-v1",
+  storageBucket: "online-quiz-v1.firebasestorage.app",
+  messagingSenderId: "970804413375",
+  appId: "1:970804413375:web:f9f5952d0b0594e82e970a"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
@@ -987,8 +987,6 @@ function renderStudent(){
 
   if(currentQuiz.status === 'open'){
     const alreadyAnswered = studentAnsweredQuizId === currentQuiz.quizId;
-    // Neue, noch nicht beantwortete Frage: Auswahl der vorherigen Frage verwerfen
-    if(!alreadyAnswered){ studentSelected = null; }
     app.innerHTML = `
       <div class="student-wrap">
         ${storageWarningBanner()}
