@@ -34,6 +34,7 @@
     --blue: #4A80B5;
     --yellow: #D9A63E;
     --green: #4E9B72;
+    --purple: #8467B3;
     --accent: #D9A63E;
   }
   *{ box-sizing:border-box; }
@@ -90,7 +91,17 @@
   .opt-row.o1 .opt-dot{ background:var(--blue); }
   .opt-row.o2 .opt-dot{ background:var(--yellow); }
   .opt-row.o3 .opt-dot{ background:var(--green); }
+  .opt-row.o4 .opt-dot{ background:var(--purple); }
   .radio-correct{ width:18px; height:18px; accent-color: var(--accent); cursor:pointer; }
+
+  /* Auswahl der Anzahl der Antwortmöglichkeiten (2-5) im Fragenformular */
+  .count-picker{ display:flex; gap:8px; }
+  .count-btn{
+    width:46px; padding:10px 0; text-align:center; background:transparent; color:var(--chalk);
+    border:1px solid var(--line); border-radius:4px; font-family:'Inter', sans-serif; font-weight:600; font-size:15px; cursor:pointer;
+  }
+  .count-btn:hover{ border-color:var(--accent); }
+  .count-btn.active{ background:var(--accent); border-color:var(--accent); color:#1E3A34; }
 
   .btn{
     display:inline-block; background: var(--accent); color:#1E3A34; border:none; padding: 12px 20px;
@@ -116,8 +127,16 @@
     position:absolute; font-family:'Fraunces', serif;
     font-size:22px; color:var(--chalk); pointer-events:none; white-space:nowrap;
   }
-  .cyl3d-labels{ position:relative; width:100%; min-height:54px; margin-top:16px; }
-  .cyl3d-label{ position:absolute; top:0; transform:translateX(-50%); width:130px; text-align:center; font-size:12px; color:var(--chalk-dim); line-height:1.4; }
+  /* Die Beschriftungen liegen in einem Grid aus n gleich breiten Spalten (n = Anzahl der
+     Antwortoptionen, per JS gesetzt). Die 3D-Säulen werden im Renderer auf exakt dieselben
+     Slot-Mitten gestellt - dadurch steht jeder Text mittig unter seiner Säule, und die Zeile
+     wächst automatisch mit, wenn ein Text mehrzeilig wird. */
+  .cyl3d-labels{ display:grid; width:100%; min-height:54px; margin-top:16px; }
+  .cyl3d-label{
+    justify-self:center; width:100%; max-width:130px; padding:0 3px; text-align:center;
+    font-size:12px; color:var(--chalk-dim); line-height:1.4; overflow-wrap:anywhere;
+  }
+  .cyl3d-labels[data-n="2"] .cyl3d-label, .cyl3d-labels[data-n="3"] .cyl3d-label{ max-width:180px; }
   .cyl3d-fallback{ padding:20px; text-align:center; color:var(--chalk-dim); font-size:13px; }
 
   .student-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 20px; text-align:center; }
@@ -132,8 +151,22 @@
   .opt-btn img{ max-height:48px; display:block; margin:2px auto; border-radius:4px; }
   .cyl3d-label img{ max-height:28px; display:block; margin:2px auto; }
   h2 img{ max-height:120px; border-radius:6px; vertical-align:middle; margin:4px 0; }
-  .options-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-  @media (max-width:420px){ .options-grid{ grid-template-columns: 1fr; } }
+  /* Layout je nach Anzahl der Antwortoptionen (data-n = 2..5):
+       2, 3  -> eine Spalte mit großen, bequem tippbaren Flächen
+       4     -> 2x2-Raster (wie bisher)
+       5     -> 2+2 plus eine letzte, volle Zeile (kein "Waisen"-Button in einer halben Zeile)
+     Auf schmalen Handys (<= 420px) bleibt alles einspaltig; bei 4 und 5 Optionen werden die
+     Buttons dort etwas niedriger, damit die Frage samt aller Antworten gut auf den Schirm passt. */
+  .options-grid{ display:grid; grid-template-columns: 1fr; gap:12px; }
+  .options-grid[data-n="2"] .opt-btn{ min-height:128px; }
+  .options-grid[data-n="3"] .opt-btn{ min-height:112px; }
+  @media (min-width:421px){
+    .options-grid[data-n="4"], .options-grid[data-n="5"]{ grid-template-columns: 1fr 1fr; }
+    .options-grid[data-n="5"] .opt-btn:last-child{ grid-column: 1 / -1; }
+  }
+  @media (max-width:420px){
+    .options-grid[data-n="5"] .opt-btn{ min-height:80px; padding-top:18px; padding-bottom:18px; }
+  }
   .opt-btn{
     border:none; border-radius:6px; padding: 26px 14px; color:#fff; font-family:'Inter', sans-serif;
     font-weight:600; font-size:16px; cursor:pointer; min-height:96px; display:flex; align-items:center;
@@ -142,6 +175,7 @@
   .opt-btn:active{ transform: scale(.97); }
   .opt-btn.o0{ background:var(--red); } .opt-btn.o1{ background:var(--blue); }
   .opt-btn.o2{ background:var(--yellow); color:#2a2110; } .opt-btn.o3{ background:var(--green); }
+  .opt-btn.o4{ background:var(--purple); }
   .opt-btn:disabled{ opacity:.35; cursor:default; }
   .opt-btn.picked{ outline: 4px solid var(--chalk); opacity:1; }
 
@@ -193,9 +227,9 @@ const DOZENT_HASH = '#dozent-k7q9wnx24pf51zt';
 const studentId = 'stu_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 let dozentUser = null;
 let dozentPhase = 'edit'; // 'edit' | 'run' | 'results'
-let questionList = [];    // [{question, options:[4], correctIndex}, ...] - alle vorbereiteten Fragen
+let questionList = [];    // [{question, options:[2..5 Texte], correctIndex}, ...] - alle vorbereiteten Fragen
 let currentQuestionIndex = 0;
-let editForm = null;      // null = Fragenliste anzeigen; sonst {index:n|null, question, options, correctIndex}
+let editForm = null;      // null = Fragenliste anzeigen; sonst {index:n|null, question, options:[5 Texte], count:2..5, correctIndex}
 let currentQuiz = null;
 let liveCount = 0;
 let answersListenerRef = null;
@@ -206,7 +240,8 @@ let flashStage = null;
 let flashSequenceQuizId = null;
 
 let storageError = null;
-const OPTION_COLOR_HEX = [0xD2604C, 0x4A80B5, 0xD9A63E, 0x4E9B72]; // matches --red/--blue/--yellow/--green
+const OPTION_COLOR_HEX = [0xD2604C, 0x4A80B5, 0xD9A63E, 0x4E9B72, 0x8467B3]; // matches --red/--blue/--yellow/--green/--purple
+const MIN_OPTIONS = 2, MAX_OPTIONS = 5, DEFAULT_OPTIONS = 4;
 
 
 auth.onAuthStateChanged(user => {
@@ -518,7 +553,7 @@ function renderLanding(){
     <div class="landing">
       <div class="landing-inner">
         <h1>Live-Quiz für die Vorlesung</h1>
-        <p class="sub">Eine Frage, vier Antworten, ein Klick. Fragen live an alle stellen und sofort sehen, wer richtig lag.</p>
+        <p class="sub">Eine Frage, zwei bis fünf Antworten, ein Klick. Fragen live an alle stellen und sofort sehen, wer richtig lag.</p>
         <div class="role-row">
           <div class="role-card" onclick="location.hash=DOZENT_HASH">
             <div class="kicker">Für den Laptop im Hörsaal</div>
@@ -619,11 +654,17 @@ function hasLectureStartedThisSession(){
 
 /* ---------------- Fragenliste bearbeiten ---------------- */
 function openQuestionForm(index){
+  // Das Formular hält immer MAX_OPTIONS Textfelder im Speicher; angezeigt, validiert und
+  // gespeichert werden nur die ersten "count". So gehen eingetippte Texte nicht verloren,
+  // wenn man die Anzahl kurz verkleinert und wieder vergrößert.
   if(index === null || index === undefined){
-    editForm = { index: null, question:'', options:['','','',''], correctIndex:null };
+    editForm = { index: null, question:'', options: new Array(MAX_OPTIONS).fill(''), count: DEFAULT_OPTIONS, correctIndex:null };
   } else {
     const q = questionList[index];
-    editForm = { index, question:q.question, options:[...q.options], correctIndex:q.correctIndex };
+    const opts = [...q.options];
+    const count = Math.min(MAX_OPTIONS, Math.max(MIN_OPTIONS, opts.length));
+    while(opts.length < MAX_OPTIONS){ opts.push(''); }
+    editForm = { index, question:q.question, options: opts.slice(0, MAX_OPTIONS), count, correctIndex:q.correctIndex };
   }
   renderDozent();
 }
@@ -632,17 +673,24 @@ function cancelQuestionForm(){ editForm = null; renderDozent(); }
 function updateFormQuestion(v){ editForm.question = v; }
 function updateFormOption(i, v){ editForm.options[i] = v; }
 function updateFormCorrect(i){ editForm.correctIndex = i; renderDozent(); }
+function setFormOptionCount(n){
+  editForm.count = n;
+  // Eine als richtig markierte Antwort, die es nicht mehr gibt, muss neu gewählt werden.
+  if(editForm.correctIndex !== null && editForm.correctIndex >= n){ editForm.correctIndex = null; }
+  renderDozent();
+}
 
 function formIsValid(f){
   return f.question.trim().length > 0
-    && f.options.every(o => o.trim().length > 0)
-    && f.correctIndex !== null && f.correctIndex !== undefined;
+    && f.options.slice(0, f.count).every(o => o.trim().length > 0)
+    && f.correctIndex !== null && f.correctIndex !== undefined
+    && f.correctIndex < f.count;
 }
 
 async function saveQuestionForm(){
   const f = editForm;
   if(!formIsValid(f)) return;
-  const entry = { question: f.question.trim(), options: f.options.map(o => o.trim()), correctIndex: f.correctIndex };
+  const entry = { question: f.question.trim(), options: f.options.slice(0, f.count).map(o => o.trim()), correctIndex: f.correctIndex };
   if(f.index === null){ questionList.push(entry); }
   else { questionList[f.index] = entry; }
   try{ await db.ref('quiz/questions').set(questionList); }
@@ -720,8 +768,9 @@ async function closeQuiz(){
     });
   }catch(e){ storageError = String(e && e.message || e); }
 
-  const counts = [0,0,0,0];
-  answers.forEach(a => { if(a.optionIndex >= 0 && a.optionIndex < 4) counts[a.optionIndex]++; });
+  const optionCount = currentQuiz.options.length;
+  const counts = new Array(optionCount).fill(0);
+  answers.forEach(a => { if(a.optionIndex >= 0 && a.optionIndex < optionCount) counts[a.optionIndex]++; });
 
   const correctAnswers = answers
     .filter(a => a.optionIndex === currentQuiz.correctIndex)
@@ -833,8 +882,14 @@ function renderQuestionForm(){
       <label>Frage</label>
       <textarea oninput="updateFormQuestion(this.value)" placeholder="Wie lautet die Frage?">${escapeHtml(f.question)}</textarea>
       <p class="small-note" style="margin-top:6px;">Unterstützt Bilder <code>![Alt](https://…jpg)</code> und Formeln <code>$x^2$</code> bzw. <code>$$...$$</code> (LaTeX), auch in den Antworten.</p>
+      <label>Anzahl der Antwortmöglichkeiten</label>
+      <div class="count-picker" role="group" aria-label="Anzahl der Antwortmöglichkeiten">
+        ${Array.from({length: MAX_OPTIONS - MIN_OPTIONS + 1}, (_, k) => MIN_OPTIONS + k).map(n => `
+          <button type="button" class="count-btn ${f.count===n ? 'active' : ''}" aria-pressed="${f.count===n}" onclick="setFormOptionCount(${n})">${n}</button>
+        `).join('')}
+      </div>
       <label>Antwortmöglichkeiten (richtige Antwort markieren)</label>
-      ${[0,1,2,3].map(i => `
+      ${Array.from({length: f.count}, (_, i) => i).map(i => `
         <div class="opt-row o${i}">
           <span class="opt-dot"></span>
           <input type="text" value="${escapeHtml(f.options[i])}" placeholder="Antwort ${i+1}" oninput="updateFormOption(${i}, this.value)">
@@ -874,7 +929,7 @@ function renderDozentRun(){
 }
 
 function renderDozentResults(){
-  const r = currentQuiz.results || { counts:[0,0,0,0], total:0 };
+  const r = currentQuiz.results || { counts:[], total:0 };
   const hasNext = currentQuestionIndex + 1 < questionList.length;
 
   const mainBlock = `
@@ -903,12 +958,17 @@ async function mountCylinderChart(r){
   const stage = document.getElementById('cyl3d-stage');
   const labelsBox = document.getElementById('cyl3d-labels');
   if(!stage) return;
+  const options = currentQuiz.options;
+  const n = options.length;
+  // Stimmen je Option (fehlende/alte Werte als 0), immer genau n Einträge
+  const counts = options.map((_, i) => (r.counts && r.counts[i]) || 0);
   try{
     if(typeof window.renderCylinderChart !== 'function'){
       throw new Error('3D-Renderer (Three.js) ist nicht geladen');
     }
-    const { tops, bases } = await window.renderCylinderChart(stage, {
-      counts: r.counts,
+    const stageWidth = stage.clientWidth || 600;
+    const { bases } = await window.renderCylinderChart(stage, {
+      counts,
       colors: OPTION_COLOR_HEX,
       correctIndex: currentQuiz.correctIndex
     });
@@ -918,27 +978,31 @@ async function mountCylinderChart(r){
     // dahinter - deshalb verlassen wir uns für die Höhe nicht auf diesen Wert,
     // sondern platzieren die Zahl an einem festen, spürbar innerhalb der
     // sichtbaren Bühne liegenden Abstand vom unteren Rand. Nur die
-    // horizontale Position (base.x) kommt weiterhin aus der Projektion.
+    // horizontale Position (base.x) kommt weiterhin aus der Projektion - als Prozentwert
+    // der Bühnenbreite, damit die Zahl auch bei einer Größenänderung des Fensters unter
+    // ihrer Säule bleibt.
     const stageHeight = stage.clientHeight || 320;
     const numberY = stageHeight - 46;
 
     bases.forEach((base, i) => {
       const numEl = document.createElement('div');
       numEl.className = 'cyl3d-count';
-      numEl.style.left = base.x + 'px';
+      numEl.style.left = (base.x / stageWidth * 100) + '%';
       numEl.style.top = numberY + 'px';
       numEl.style.transform = 'translate(-50%, 0)';
-      numEl.textContent = r.counts[i];
+      numEl.textContent = counts[i];
       stage.appendChild(numEl);
     });
 
     if(labelsBox){
+      // n gleich breite Spalten = dieselben Slots, in deren Mitte der Renderer die Säulen stellt
       labelsBox.innerHTML = '';
-      tops.forEach((top, i) => {
+      labelsBox.dataset.n = String(n);
+      labelsBox.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+      options.forEach(o => {
         const labelEl = document.createElement('div');
         labelEl.className = 'cyl3d-label';
-        labelEl.style.left = top.x + 'px';
-        labelEl.innerHTML = richTextHtml(currentQuiz.options[i]);
+        labelEl.innerHTML = richTextHtml(o);
         labelsBox.appendChild(labelEl);
       });
       renderMathIn(labelsBox);
@@ -946,7 +1010,7 @@ async function mountCylinderChart(r){
   }catch(e){
     console.error('3D-Chart konnte nicht gerendert werden, zeige Fallback-Liste', e);
     stage.innerHTML = `<div class="cyl3d-fallback">
-      ${currentQuiz.options.map((o,i)=>`<div style="margin-bottom:10px; text-align:left;"><strong>${r.counts[i]}</strong> — ${richTextHtml(o)}${i===currentQuiz.correctIndex ? ' <span style="color:var(--green);">(richtig)</span>' : ''}</div>`).join('')}
+      ${options.map((o,i)=>`<div style="margin-bottom:10px; text-align:left;"><strong>${counts[i]}</strong> — ${richTextHtml(o)}${i===currentQuiz.correctIndex ? ' <span style="color:var(--green);">(richtig)</span>' : ''}</div>`).join('')}
     </div>`;
     if(labelsBox){ labelsBox.innerHTML = ''; }
     renderMathIn(stage);
@@ -987,12 +1051,14 @@ function renderStudent(){
 
   if(currentQuiz.status === 'open'){
     const alreadyAnswered = studentAnsweredQuizId === currentQuiz.quizId;
+    // Neue, noch nicht beantwortete Frage: Auswahl der vorherigen Frage verwerfen
+    if(!alreadyAnswered){ studentSelected = null; }
     app.innerHTML = `
       <div class="student-wrap">
         ${storageWarningBanner()}
         <div class="question-card">
           <div class="qtext">${richTextHtml(currentQuiz.question)}</div>
-          <div class="options-grid">
+          <div class="options-grid" data-n="${currentQuiz.options.length}">
             ${currentQuiz.options.map((o,i) => `
               <button class="opt-btn o${i} ${studentSelected===i ? 'picked' : ''}"
                 ${alreadyAnswered ? 'disabled' : ''}
@@ -1082,25 +1148,39 @@ function flashScreen(color, title, sub){
     const aspect = width / height;
 
     const n = data.counts.length;
-    const spacing = 3.9;
-    const startX = -spacing * (n - 1) / 2;
     const maxCount = Math.max(1, ...data.counts);
     const maxHeight = 4.0;
-    const radius = 0.85;
 
     const scene = new THREE.Scene();
     const vFovDeg = 28;
     const camera = new THREE.PerspectiveCamera(vFovDeg, aspect, 0.1, 100);
 
-    // Kameraabstand hängt vom tatsächlichen Seitenverhältnis des Containers ab,
-    // damit die äußeren Säulen auch bei einem schmalen (einspaltigen) Layout
-    // nicht abgeschnitten werden, statt eine feste Position anzunehmen.
-    const neededHalfWidth = (spacing * (n - 1) / 2 + radius) * 1.18;
+    // Kamera: bewusst UNABHÄNGIG von der Anzahl der Säulen. Der Abstand wird immer so
+    // berechnet wie für das bisherige 4-Säulen-Layout (Abstand 3,9, Radius 0,85). Dadurch ist
+    // der vertikale Bildaufbau (Säulenhöhe, Bodenlinie, Perspektive) für 2 bis 5 Säulen
+    // identisch; nur die horizontale Verteilung ändert sich. Bei schmalem Layout rückt die
+    // Kamera weiter weg, damit die äußeren Säulen nicht abgeschnitten werden.
+    const REF_HALF_WIDTH = (3.9 * (4 - 1) / 2 + 0.85) * 1.18;
     const vFovRad = vFovDeg * Math.PI / 180;
-    let camZ = neededHalfWidth / (Math.tan(vFovRad / 2) * aspect);
+    let camZ = REF_HALF_WIDTH / (Math.tan(vFovRad / 2) * aspect);
     camZ = Math.max(camZ, 11);
     camera.position.set(0, camZ * 0.3, camZ);
     camera.lookAt(0, 1.1, 0);
+    // Matrizen JETZT aktualisieren: Vector3.project() würde sonst die Kameramatrix aus der
+    // Zeit vor lookAt() (ohne Neigung) verwenden, und die Overlay-Positionen wären leicht verschoben.
+    camera.updateMatrixWorld(true);
+
+    // Horizontale Verteilung: Die Bühnenbreite wird in n gleich breite Slots geteilt, jede
+    // Säule steht in der Mitte ihres Slots (genau wie die Beschriftungen im Grid darunter).
+    // Auf der Bodenebene (y=0, z=0) ist die Projektion in x linear; daraus ergibt sich, wie
+    // viele NDC-Einheiten eine Welteinheit breit ist, und damit die Weltposition jeder Slot-Mitte.
+    const ndcPerUnit = new THREE.Vector3(1, 0, 0).project(camera).x - new THREE.Vector3(0, 0, 0).project(camera).x;
+    const halfVisible = 1 / ndcPerUnit;                       // halbe sichtbare Breite in Welteinheiten
+    const slotWidth = 2 * halfVisible / n;
+    const slotCenterX = i => (((i + 0.5) / n) * 2 - 1) * halfVisible;
+    // Säulendicke: bei 4 Säulen wie bisher 0,85, bei wenigen Säulen (breitere Slots) etwas
+    // dicker (max. 1,15), bei 5 Säulen nicht dünner als 0,85.
+    const radius = Math.min(1.15, Math.max(0.85, slotWidth * 0.2));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -1121,10 +1201,11 @@ function flashScreen(color, title, sub){
     dirLight.position.set(4, 8, 5);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.set(1024, 1024);
-    dirLight.shadow.camera.left = -9;
-    dirLight.shadow.camera.right = 9;
-    dirLight.shadow.camera.top = 9;
-    dirLight.shadow.camera.bottom = -9;
+    const shadowExt = Math.max(9, halfVisible + 1.5);   // Schattenbereich deckt die ganze sichtbare Breite ab
+    dirLight.shadow.camera.left = -shadowExt;
+    dirLight.shadow.camera.right = shadowExt;
+    dirLight.shadow.camera.top = shadowExt;
+    dirLight.shadow.camera.bottom = -shadowExt;
     scene.add(dirLight);
 
     const ground = new THREE.Mesh(
@@ -1139,7 +1220,7 @@ function flashScreen(color, title, sub){
     const bases = [];
     for(let i = 0; i < n; i++){
       const h = Math.max(0.35, (data.counts[i] / maxCount) * maxHeight);
-      const x = startX + i * spacing;
+      const x = slotCenterX(i);
 
       const mesh = new THREE.Mesh(
         new THREE.CylinderGeometry(radius, radius, h, 32),
