@@ -189,6 +189,27 @@
   .result-card .verdict.correct{ color: var(--green); } .result-card .verdict.wrong{ color: var(--red); }
   .result-card .answer-line{ color:var(--chalk-dim); font-size:14px; margin-bottom:22px; }
   .small-note{ font-size:12px; color:var(--chalk-dim); margin-top:24px; line-height:1.6; }
+
+  /* --- Aktuelle Frage in der Dozenten-Ansicht (für die Projektion) ---
+     Gleiche Farben wie auf den Handys, aber ohne Markierung der richtigen Antwort. */
+  .live-question{ margin-bottom:20px; }
+  .live-qtext{ font-family:'Fraunces', serif; font-size: clamp(22px, 2.8vw, 32px); line-height:1.3; margin-bottom:18px; }
+  .live-opts{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  .live-opts[data-n="3"] .live-opt:last-child, .live-opts[data-n="5"] .live-opt:last-child{ grid-column: 1 / -1; }
+  @media (max-width:600px){ .live-opts{ grid-template-columns: 1fr; } }
+  .live-opt{
+    border-radius:6px; padding:18px 16px; min-height:72px; display:flex; align-items:center; justify-content:center;
+    text-align:center; color:#fff; font-weight:600; font-size:18px; line-height:1.3; overflow-wrap:anywhere;
+  }
+  .live-opt.o0{ background:var(--red); } .live-opt.o1{ background:var(--blue); }
+  .live-opt.o2{ background:var(--yellow); color:#2a2110; } .live-opt.o3{ background:var(--green); }
+  .live-opt.o4{ background:var(--purple); }
+  .live-opt img{ max-height:90px; display:block; margin:2px auto; border-radius:4px; }
+
+  /* --- Import der Fragenliste --- */
+  .import-panel{ margin-bottom:10px; border-color:var(--accent); }
+  .import-panel.has-errors{ border-color:var(--red); }
+  .import-errors{ margin:10px 0 0; padding-left:18px; font-size:13px; line-height:1.6; color:#f0b3a5; }
 </style>
 </head>
 <body>
@@ -229,7 +250,8 @@ let dozentUser = null;
 let dozentPhase = 'edit'; // 'edit' | 'run' | 'results'
 let questionList = [];    // [{question, options:[2..5 Texte], correctIndex}, ...] - alle vorbereiteten Fragen
 let currentQuestionIndex = 0;
-let editForm = null;      // null = Fragenliste anzeigen; sonst {index:n|null, question, options:[5 Texte], count:2..5, correctIndex}
+let editForm = null;      // null = Fragenliste anzeigen; sonst {index:n|null, insertAt:'start'|'end', question, options:[5 Texte], count:2..5, correctIndex}
+let importState = null;   // null = kein Import offen; sonst {fileName, questions:[...], errors:[...]}
 let currentQuiz = null;
 let liveCount = 0;
 let answersListenerRef = null;
@@ -637,6 +659,7 @@ async function loadDozentData(){
   }catch(e){ storageError = String(e && e.message || e); }
 
   editForm = null;
+  importState = null;
   if(currentQuiz && currentQuiz.status === 'open'){ dozentPhase = 'run'; }
   else if(currentQuiz && currentQuiz.status === 'closed'){ dozentPhase = 'results'; }
   else { dozentPhase = questionList.length ? 'run' : 'edit'; }
@@ -653,12 +676,14 @@ function hasLectureStartedThisSession(){
 }
 
 /* ---------------- Fragenliste bearbeiten ---------------- */
-function openQuestionForm(index){
+function openQuestionForm(index, insertAt){
   // Das Formular hält immer MAX_OPTIONS Textfelder im Speicher; angezeigt, validiert und
   // gespeichert werden nur die ersten "count". So gehen eingetippte Texte nicht verloren,
   // wenn man die Anzahl kurz verkleinert und wieder vergrößert.
+  // insertAt ('start' | 'end') legt fest, wo eine NEUE Frage in die Liste eingefügt wird.
+  importState = null;
   if(index === null || index === undefined){
-    editForm = { index: null, question:'', options: new Array(MAX_OPTIONS).fill(''), count: DEFAULT_OPTIONS, correctIndex:null };
+    editForm = { index: null, insertAt: insertAt === 'start' ? 'start' : 'end', question:'', options: new Array(MAX_OPTIONS).fill(''), count: DEFAULT_OPTIONS, correctIndex:null };
   } else {
     const q = questionList[index];
     const opts = [...q.options];
@@ -691,7 +716,12 @@ async function saveQuestionForm(){
   const f = editForm;
   if(!formIsValid(f)) return;
   const entry = { question: f.question.trim(), options: f.options.slice(0, f.count).map(o => o.trim()), correctIndex: f.correctIndex };
-  if(f.index === null){ questionList.push(entry); }
+  if(f.index === null && f.insertAt === 'start'){
+    const hadQuestions = questionList.length > 0;
+    questionList.unshift(entry);
+    if(hadQuestions){ shiftLectureIndexAfterInsertAtStart(1); }
+  }
+  else if(f.index === null){ questionList.push(entry); }
   else { questionList[f.index] = entry; }
   try{ await db.ref('quiz/questions').set(questionList); }
   catch(e){ storageError = String(e && e.message || e); }
@@ -714,9 +744,212 @@ function moveQuestion(i, dir){
   renderDozent();
 }
 
+// Wenn mitten in einer Vorlesung Fragen am Anfang eingefügt werden, rutscht die aktuelle
+// Frage nach hinten. Der Vorlesungsstand wird mitverschoben, damit er weiterhin auf
+// dieselbe Frage zeigt. Vor Beginn einer Vorlesung bleibt er bei der (neuen) ersten Frage.
+function shiftLectureIndexAfterInsertAtStart(count){
+  if(!hasLectureStartedThisSession()) return;
+  currentQuestionIndex += count;
+  db.ref('quiz/session/currentIndex').set(currentQuestionIndex).catch(()=>{});
+}
+
+/* ---------------- Fragenliste exportieren / importieren ----------------
+   Textformat (mit jedem Texteditor bearbeitbar, UTF-8):
+
+     # Kommentarzeile
+     Frage: Text der Frage
+     ggf. weitere Zeilen der Frage
+     + richtige Antwort
+     - falsche Antwort
+
+   Beginnt eine Folgezeile der Frage selbst mit "+ ", "- ", "#" oder "Frage:", wird ihr
+   beim Export ein "\" vorangestellt, das beim Import wieder entfernt wird. */
+const QFILE_NEEDS_ESCAPE = /^\s*\\*(?:[+\-](?:\s|$)|#|frage\s*:)/i;
+const QFILE_ESCAPED      = /^(\s*)\\(\\*(?:[+\-](?:\s|$)|#|frage\s*:))/i;
+
+function questionsToText(list){
+  const today = new Date().toLocaleDateString('de-DE');
+  const out = [
+    `# Live-Quiz – Fragenliste (exportiert am ${today}, ${list.length} Frage${list.length===1?'':'n'})`,
+    '#',
+    '# So ist die Datei aufgebaut:',
+    '#   Frage: <Text>   beginnt eine neue Frage. Weitere Zeilen bis zur ersten Antwort gehören zur Frage.',
+    '#   + <Antwort>     ist die richtige Antwort (genau eine pro Frage).',
+    '#   - <Antwort>     ist eine falsche Antwort.',
+    '#   Pro Frage sind 2 bis 5 Antworten erlaubt; ihre Reihenfolge bleibt erhalten.',
+    '#   Zeilen, die mit # beginnen, sind Kommentare. Leerzeilen zwischen Fragen werden ignoriert.',
+    '#   Bilder: ![Beschreibung](https://…)    Formeln: $x^2$ oder $$...$$',
+    '#   Die Datei als Text mit UTF-8-Kodierung speichern, damit Umlaute erhalten bleiben.',
+  ];
+  list.forEach(q => {
+    const qLines = String(q.question || '').split(/\r\n|\r|\n/);
+    out.push('');
+    out.push('Frage: ' + qLines[0]);
+    qLines.slice(1).forEach(l => {
+      out.push(QFILE_NEEDS_ESCAPE.test(l) ? l.replace(/^(\s*)/, '$1\\') : l);
+    });
+    (q.options || []).forEach((o, i) => {
+      out.push((i === q.correctIndex ? '+ ' : '- ') + String(o).replace(/\s*[\r\n]+\s*/g, ' '));
+    });
+  });
+  return out.join('\n') + '\n';
+}
+
+function parseQuestionsText(text){
+  const lines = String(text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
+  const questions = [], errors = [];
+  let cur = null;
+
+  function finish(){
+    if(!cur) return;
+    const where = `Frage aus Zeile ${cur.line}`;
+    const question = cur.qLines.join('\n').trim();
+    let ok = !cur.bad;
+    if(!question){ errors.push(`${where}: Der Fragetext fehlt.`); ok = false; }
+    if(cur.options.length < MIN_OPTIONS || cur.options.length > MAX_OPTIONS){
+      errors.push(`${where}: ${cur.options.length} Antwort${cur.options.length===1?'':'en'} gefunden, erlaubt sind ${MIN_OPTIONS} bis ${MAX_OPTIONS}.`);
+      ok = false;
+    }
+    if(cur.correct.length !== 1){
+      errors.push(`${where}: Es muss genau eine richtige Antwort (mit „+“) geben, gefunden: ${cur.correct.length}.`);
+      ok = false;
+    }
+    if(ok){ questions.push({ question, options: cur.options, correctIndex: cur.correct[0] }); }
+    cur = null;
+  }
+
+  lines.forEach((raw, i) => {
+    const ln = i + 1;
+    const t = raw.trim();
+    if(t.startsWith('#')) return;                                  // Kommentar
+
+    const mQ = t.match(/^frage\s*:\s*(.*)$/i);
+    if(mQ){                                                        // neue Frage
+      finish();
+      cur = { line: ln, qLines: mQ[1] ? [mQ[1]] : [], options: [], correct: [], bad: false };
+      return;
+    }
+
+    const mO = t.match(/^([+\-])(?:\s+(.*))?$/);
+    if(mO){                                                        // Antwort
+      if(!cur){ errors.push(`Zeile ${ln}: Antwort ohne vorausgehende „Frage:“-Zeile.`); return; }
+      const optText = (mO[2] || '').trim();
+      if(!optText){ errors.push(`Zeile ${ln}: Die Antwort ist leer.`); cur.bad = true; return; }
+      if(mO[1] === '+'){ cur.correct.push(cur.options.length); }
+      cur.options.push(optText);
+      return;
+    }
+
+    if(t === ''){                                                  // Leerzeile
+      if(cur && !cur.options.length){ cur.qLines.push(''); }
+      return;
+    }
+
+    if(cur && !cur.options.length){                                // Folgezeile der Frage
+      cur.qLines.push(raw.replace(/\s+$/, '').replace(QFILE_ESCAPED, '$1$2'));
+      return;
+    }
+
+    if(cur){ errors.push(`Zeile ${ln}: Unerwarteter Text nach den Antworten. Antworten beginnen mit „+ “ oder „- “, eine neue Frage mit „Frage:“.`); }
+    else { errors.push(`Zeile ${ln}: Text vor der ersten „Frage:“-Zeile.`); }
+  });
+  finish();
+
+  if(!questions.length && !errors.length){ errors.push('In der Datei wurde keine Frage gefunden. Jede Frage beginnt mit „Frage:“.'); }
+  return { questions, errors };
+}
+
+function exportQuestions(){
+  if(!questionList.length) return;
+  const blob = new Blob([questionsToText(questionList)], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'quiz-fragen-' + new Date().toISOString().slice(0, 10) + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function handleImportFile(input){
+  const file = input.files && input.files[0];
+  input.value = '';   // dieselbe Datei kann nach einer Korrektur erneut gewählt werden
+  if(!file) return;
+  try{
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder('utf-8').decode(buf);
+    // In älteren Editoren als "ANSI" gespeichert? Dann Umlaute als Windows-1252 lesen.
+    if(text.includes('\uFFFD')){ text = new TextDecoder('windows-1252').decode(buf); }
+    const { questions, errors } = parseQuestionsText(text);
+    importState = { fileName: file.name, questions, errors };
+  }catch(e){
+    importState = { fileName: file.name, questions: [], errors: ['Die Datei konnte nicht gelesen werden: ' + (e && e.message || e)] };
+  }
+  renderDozent();
+}
+
+function cancelImport(){ importState = null; renderDozent(); }
+
+async function applyImport(mode){
+  if(!importState || importState.errors.length) return;
+  const imported = importState.questions;
+  if(mode === 'replace'){
+    if(questionList.length && !confirm(`Die bestehenden ${questionList.length} Fragen werden durch ${imported.length} importierte Fragen ersetzt. Fortfahren?`)) return;
+    questionList = imported.slice();
+    currentQuestionIndex = 0;
+    db.ref('quiz/session/currentIndex').set(0).catch(()=>{});
+  } else if(mode === 'start'){
+    const hadQuestions = questionList.length > 0;
+    questionList = imported.concat(questionList);
+    if(hadQuestions){ shiftLectureIndexAfterInsertAtStart(imported.length); }
+  } else {
+    questionList = questionList.concat(imported);
+  }
+  importState = null;
+  storageError = null;
+  try{ await db.ref('quiz/questions').set(questionList); }
+  catch(e){ storageError = String(e && e.message || e); }
+  renderDozent();
+}
+
+function renderImportPanel(){
+  if(!importState) return '';
+  const s = importState;
+  if(s.errors.length){
+    const shown = s.errors.slice(0, 12);
+    return `
+      <div class="panel import-panel has-errors">
+        <strong>Import nicht möglich: „${escapeHtml(s.fileName)}“ enthält ${s.errors.length} Fehler.</strong>
+        <ul class="import-errors">${shown.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>
+        ${s.errors.length > shown.length ? `<p class="small-note" style="margin-top:6px;">… und ${s.errors.length - shown.length} weitere.</p>` : ''}
+        <p class="small-note" style="margin-top:10px;">Die bestehende Fragenliste wurde nicht verändert. Korrigiere die Datei im Texteditor und importiere sie erneut.</p>
+        <div class="btn-row" style="margin-top:10px;"><button class="btn secondary" onclick="cancelImport()">Schließen</button></div>
+      </div>`;
+  }
+  const n = s.questions.length;
+  const nText = n + ' Frage' + (n===1 ? '' : 'n');
+  return `
+    <div class="panel import-panel">
+      <strong>${nText} aus „${escapeHtml(s.fileName)}“ gelesen.</strong>
+      <p class="small-note" style="margin-top:6px;">${questionList.length
+        ? `Wohin sollen sie? Die Liste enthält bereits ${questionList.length} Frage${questionList.length===1?'':'n'}.`
+        : 'Die Fragen werden in die leere Liste übernommen.'}</p>
+      <div class="btn-row" style="margin-top:10px;">
+        ${questionList.length ? `
+          <button class="btn" onclick="applyImport('start')">Am Anfang einfügen</button>
+          <button class="btn" onclick="applyImport('end')">Am Ende anhängen</button>
+          <button class="btn danger" onclick="applyImport('replace')">Liste ersetzen</button>
+        ` : `<button class="btn" onclick="applyImport('end')">Fragen übernehmen</button>`}
+        <button class="btn secondary" onclick="cancelImport()">Abbrechen</button>
+      </div>
+    </div>`;
+}
+
 function startLecture(){
   if(!questionList.length) return;
   editForm = null;
+  importState = null;
   dozentPhase = 'run';
   renderDozent();
 }
@@ -863,10 +1096,21 @@ function renderDozentEdit(){
     <div class="panel" style="margin-bottom:10px;">
       <h2 style="margin-top:0;">Fragen vorbereiten</h2>
       <p class="small-note" style="margin-top:0;">${questionList.length ? questionList.length + ' Frage' + (questionList.length===1?'':'n') + ' vorbereitet.' : 'Noch keine Frage vorbereitet.'}</p>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn secondary" ${questionList.length ? '' : 'disabled'} onclick="exportQuestions()">Fragen exportieren</button>
+        <button class="btn secondary" onclick="document.getElementById('import-file').click()">Fragen importieren</button>
+      </div>
+      <input type="file" id="import-file" accept=".txt,text/plain" hidden onchange="handleImportFile(this)">
+      <p class="small-note" style="margin-top:10px;">Der Export ist eine Textdatei, die du mit jedem Texteditor bearbeiten und anschließend wieder importieren kannst.</p>
     </div>
+    ${renderImportPanel()}
+    ${questionList.length ? `
+      <div class="btn-row" style="margin:0 0 10px;">
+        <button class="btn secondary" onclick="openQuestionForm(null,'start')">+ Neue Frage am Anfang einfügen</button>
+      </div>` : ''}
     ${itemsHtml}
     <div class="btn-row">
-      <button class="btn secondary" onclick="openQuestionForm(null)">+ Neue Frage hinzufügen</button>
+      <button class="btn secondary" onclick="openQuestionForm(null,'end')">+ Neue Frage ${questionList.length ? 'am Ende einfügen' : 'hinzufügen'}</button>
       <button class="btn" ${questionList.length ? '' : 'disabled'} onclick="startLecture()">Weiter zur Vorlesung</button>
     </div>
   `;
@@ -878,7 +1122,7 @@ function renderQuestionForm(){
   const f = editForm;
   const mainBlock = `
     <div class="panel">
-      <h2 style="margin-top:0;">${f.index === null ? 'Neue Frage' : 'Frage bearbeiten'}</h2>
+      <h2 style="margin-top:0;">${f.index !== null ? 'Frage bearbeiten' : (f.insertAt === 'start' && questionList.length ? 'Neue Frage am Anfang' : (questionList.length ? 'Neue Frage am Ende' : 'Neue Frage'))}</h2>
       <label>Frage</label>
       <textarea oninput="updateFormQuestion(this.value)" placeholder="Wie lautet die Frage?">${escapeHtml(f.question)}</textarea>
       <p class="small-note" style="margin-top:6px;">Unterstützt Bilder <code>![Alt](https://…jpg)</code> und Formeln <code>$x^2$</code> bzw. <code>$$...$$</code> (LaTeX), auch in den Antworten.</p>
@@ -922,10 +1166,21 @@ function renderDozentRun(){
           ? '<button class="btn danger" onclick="closeQuiz()">Quiz beenden</button>'
           : '<button class="btn" onclick="launchQuiz()">Quiz starten</button>'}
       </div>
-      ${!isOpen ? '<p class="small-note"><a onclick="backToEditing()">Fragen verwalten</a></p>' : '<p class="small-note">Frage und Antworten werden nur auf den Handys der Studierenden angezeigt.</p>'}
+      ${!isOpen ? '<p class="small-note"><a onclick="backToEditing()">Fragen verwalten</a></p>' : '<p class="small-note">Die richtige Antwort wird erst nach dem Beenden angezeigt.</p>'}
     </div>
   `;
-  dozentShell(`<div class="grid-2"><div>${mainBlock}</div><div>${renderQrBlock()}</div></div>`);
+  // Laufende Frage groß für die Projektion. Angezeigt wird der Stand aus quiz/current,
+  // damit auch nach einem Reload mitten im Quiz genau die gestartete Frage erscheint.
+  const liveQuestion = isOpen ? `
+    <div class="panel live-question">
+      <div class="qtext live-qtext">${richTextHtml(currentQuiz.question)}</div>
+      <div class="live-opts" data-n="${currentQuiz.options.length}">
+        ${currentQuiz.options.map((o,i) => `<div class="live-opt o${i}">${richTextHtml(o)}</div>`).join('')}
+      </div>
+    </div>
+  ` : '';
+  dozentShell(`${liveQuestion}<div class="grid-2"><div>${mainBlock}</div><div>${renderQrBlock()}</div></div>`);
+  renderMathIn(document.getElementById('app'));
 }
 
 function renderDozentResults(){
