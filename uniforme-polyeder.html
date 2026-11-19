@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Uniforme Polyeder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=STIX+Two+Text:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#E8ECF0; --panel:#F3F5F7; --ink:#18212C; --muted:#5A6676; --line:#CBD3DC;
+  --stage:#D9E0E7; --stage-2:#EEF1F4; --focus:#2166AC; --edge:#1B232E; --field:#FFFFFF;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#131A23; --panel:#18212C; --ink:#E3E8EE; --muted:#95A1B0; --line:#2C3746;
+    --stage:#0E141B; --stage-2:#1A2531; --focus:#92C5DE; --edge:#E6EBF1; --field:#202A36;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#131A23; --panel:#18212C; --ink:#E3E8EE; --muted:#95A1B0; --line:#2C3746;
+  --stage:#0E141B; --stage-2:#1A2531; --focus:#92C5DE; --edge:#E6EBF1; --field:#202A36;
+}
+html{height:100%;background:var(--bg);scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font:15px/1.5 "Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.math{font-family:"STIX Two Text","Cambria Math","Times New Roman",serif}
+.app{display:grid;grid-template-columns:minmax(320px,380px) 1fr;height:100%}
+
+.panel{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:26px 22px 30px}
+.panel h1{font-size:23px;line-height:1.2;font-weight:600;margin:0 0 6px;letter-spacing:-0.01em}
+.lede{margin:0;color:var(--muted);font-size:14px}
+.panel section{margin-top:24px}
+.panel h2{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 10px}
+.note{font-size:13px;color:var(--muted);margin:8px 0 0;line-height:1.45}
+
+select{width:100%;font:inherit;font-size:15px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:pointer}
+select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.desc{font-size:14px;margin:10px 0 0;line-height:1.45}
+
+.check{display:flex;align-items:center;gap:10px;padding:4px 0;font-size:14px;cursor:pointer}
+.check input{accent-color:var(--ink);width:16px;height:16px;margin:0}
+.row{display:grid;grid-template-columns:96px 1fr 44px;align-items:center;gap:10px;margin-top:10px}
+.row label{font-size:14px}
+.row output{text-align:right;font-variant-numeric:tabular-nums;font-family:"STIX Two Text",serif;font-size:16px}
+input[type=range]{width:100%;accent-color:var(--ink);margin:0}
+input[type=range]:disabled{opacity:.4}
+
+.seg{display:grid;gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.seg.two{grid-template-columns:repeat(2,1fr)}
+.seg.wrap{display:flex;flex-wrap:wrap}
+.seg.wrap button{flex:1 1 30%}
+.seg label,.seg button{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;
+  font:inherit;font-size:13px;line-height:1.25;padding:8px 6px;border:0;border-radius:7px;cursor:pointer;color:var(--muted);background:transparent}
+.seg label.on{background:var(--ink);color:var(--panel)}
+.seg button:hover{color:var(--ink)}
+.seg button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.seg input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.seg label:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:1px}
+
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--muted)}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+.facts{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-size:14px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-family:"STIX Two Text",serif;font-size:15px;font-variant-numeric:tabular-nums}
+
+.btn{font:inherit;font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn:hover{border-color:var(--ink)}
+.btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+.stage{position:relative;min-width:0;overflow:hidden;background:radial-gradient(ellipse at 55% 50%,var(--stage-2),var(--stage) 72%)}
+#viewport{position:absolute;inset:0}
+#viewport canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#viewport canvas:active{cursor:grabbing}
+.title{position:absolute;top:20px;left:24px;right:24px;pointer-events:none}
+.title .big{font-family:"STIX Two Text",serif;font-size:44px;line-height:1.05}
+.title .sub{font-size:14px;color:var(--muted);margin-top:6px}
+.readout{position:absolute;left:24px;bottom:20px;right:24px;font-size:13px;color:var(--muted);pointer-events:none}
+.readout b{font-weight:500;color:var(--ink)}
+.gl-error{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:32px;text-align:center;color:var(--muted)}
+
+@media (max-width:820px){
+  html,body{height:auto}
+  .app{grid-template-columns:1fr;height:auto}
+  .stage{order:-1;height:62vh;height:62svh;min-height:340px}
+  .panel{border-right:0;border-top:1px solid var(--line);overflow:visible}
+  .title{top:14px;left:16px;right:16px}
+  .title .big{font-size:30px}
+  .readout{left:16px;bottom:14px;right:16px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Einstellungen">
+    <h1>Uniforme Polyeder</h1>
+    <p class="lede">Platonische und archimedische Körper, Prismen und Antiprismen. Alle Flächen sind regelmäßige Vielecke, und alle Ecken sehen gleich aus.</p>
+
+    <section aria-labelledby="h-body">
+      <h2 id="h-body">Körper</h2>
+      <select id="polySel" aria-labelledby="h-body"></select>
+      <div class="row" id="nRow" hidden>
+        <label for="nRange">Ecken <span class="math"><i>n</i></span></label>
+        <input type="range" id="nRange" min="3" max="12" step="1" value="5">
+        <output id="nOut" for="nRange"></output>
+      </div>
+      <p class="desc" id="desc"></p>
+    </section>
+
+    <section aria-labelledby="h-show">
+      <h2 id="h-show">Anzeige</h2>
+      <label class="check"><input type="checkbox" id="cFaces"><span>Flächen (flat shading)</span></label>
+      <label class="check"><input type="checkbox" id="cEdges"><span>Kanten (Drahtgitter)</span></label>
+      <label class="check"><input type="checkbox" id="cVerts"><span>Ecken als Punkte</span></label>
+      <label class="check"><input type="checkbox" id="cRotate"><span>Automatisch drehen</span></label>
+    </section>
+
+    <section aria-labelledby="h-color">
+      <h2 id="h-color">Flächenfarbe</h2>
+      <div class="seg two" id="colorSeg" role="radiogroup" aria-labelledby="h-color">
+        <label><input type="radio" name="color" value="type">Nach Flächentyp</label>
+        <label><input type="radio" name="color" value="mono">Einfarbig</label>
+      </div>
+      <ul class="legend" id="legend"></ul>
+      <div class="row">
+        <label for="opRange">Deckkraft</label>
+        <input type="range" id="opRange" min="0.15" max="1" step="0.05" value="1">
+        <output id="opOut" for="opRange"></output>
+      </div>
+      <div class="row">
+        <label for="edRange">Kantenstärke</label>
+        <input type="range" id="edRange" min="0.004" max="0.06" step="0.002" value="0.016">
+        <output id="edOut" for="edRange"></output>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-view">
+      <h2 id="h-view">Blick senkrecht auf</h2>
+      <div class="seg wrap" id="viewSeg"></div>
+      <p class="note">Ziehen dreht, Mausrad oder zwei Finger zoomen.</p>
+      <button class="btn" id="resetView" type="button" style="margin-top:10px">Ansicht zurücksetzen</button>
+    </section>
+
+    <section aria-labelledby="h-facts">
+      <h2 id="h-facts">Kennzahlen bei Kantenlänge <span class="math"><i>a</i></span> = 1</h2>
+      <dl class="facts" id="facts"></dl>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <div id="viewport"></div>
+    <div class="title"><div class="big" id="tBig"></div><div class="sub" id="tSub"></div></div>
+    <div class="readout" id="readout" aria-live="polite"></div>
+    <div class="gl-error" id="glError">Die 3D-Ansicht konnte nicht geladen werden. Prüfe die Internetverbindung und lade die Seite neu.</div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const fmt = (v, d) => v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/* ================= Eckpunkte der Körper ================= */
+const PHI = (1 + Math.sqrt(5))/2;
+const EVEN = [[0,1,2],[1,2,0],[2,0,1]], ODD = [[0,2,1],[2,1,0],[1,0,2]], ALL = EVEN.concat(ODD), ID = [[0,1,2]];
+// Vorzeichenvarianten; parity: null = alle, 0/1 = gerade/ungerade Anzahl Pluszeichen
+function signVariants(v, parity){
+  const out = [];
+  for (let mask = 0; mask < 8; mask++){
+    let plus = 0, skip = false; const w = [];
+    for (let k = 0; k < 3; k++){
+      const s = (mask >> k) & 1 ? -1 : 1;
+      if (v[k] === 0 && s < 0){ skip = true; break; }
+      if (s > 0) plus++;
+      w.push(s*v[k]);
+    }
+    if (skip) continue;
+    if (parity != null && plus % 2 !== parity) continue;
+    out.push(w);
+  }
+  return out;
+}
+function gen(list, perms, parity){
+  const r = [];
+  for (const v of list) for (const s of signVariants(v, parity)) for (const p of perms) r.push([s[p[0]], s[p[1]], s[p[2]]]);
+  return r;
+}
+function uniq(pts){
+  const m = new Map();
+  for (const p of pts){ const k = p.map(x => Math.round(x*1e6)).join(','); if (!m.has(k)) m.set(k, p); }
+  return [...m.values()];
+}
+const TRIB = (1 + Math.cbrt(19 + 3*Math.sqrt(33)) + Math.cbrt(19 - 3*Math.sqrt(33)))/3;
+// Abgeschrägtes Dodekaeder: numerisch als Bahn der Ikosaeder-Drehgruppe bestimmt (Kantenlänge 1)
+const SNUB_DODECA = [[1.454024229,0.728335177,-1.415265416],[-0.847550047,1.103156835,-1.646917941],[-1.415265416,1.454024229,0.728335177],[-1.977838965,-0.643029606,-0.567715369],[-1.646917941,-0.847550047,1.103156835],[-1.249503788,-0.192893711,1.746186441],[0.728335177,-1.415265416,1.454024229],[-0.374821658,-2.097053835,0.330921025],[-0.567715369,-1.977838965,-0.643029606],[1.103156835,-1.646917941,-0.847550047],[0.643029606,-0.567715369,1.977838965],[1.746186441,-1.249503788,-0.192893711],[2.097053835,0.330921025,0.374821658],[0.330921025,-0.374821658,-2.097053835],[-0.643029606,-0.567715369,-1.977838965],[1.249503788,-0.192893711,-1.746186441],[1.646917941,0.847550047,1.103156835],[1.977838965,0.643029606,-0.567715369],[-0.192893711,1.746186441,-1.249503788],[0.567715369,1.977838965,-0.643029606],[0.374821658,2.097053835,0.330921025],[-2.097053835,0.330921025,-0.374821658],[-0.728335177,-1.415265416,-1.454024229],[-0.330921025,0.374821658,-2.097053835],[-1.746186441,1.249503788,-0.192893711],[1.103156835,1.646917941,0.847550047],[-0.567715369,1.977838965,0.643029606],[-0.643029606,0.567715369,1.977838965],[0.330921025,0.374821658,2.097053835],[-1.103156835,-1.646917941,0.847550047],[0.192893711,-1.746186441,-1.249503788],[-1.454024229,-0.728335177,-1.415265416],[-2.097053835,-0.330921025,0.374821658],[-0.192893711,-1.746186441,1.249503788],[0.847550047,1.103156835,1.646917941],[-1.454024229,0.728335177,1.415265416],[1.977838965,-0.643029606,0.567715369],[1.415265416,-1.454024229,0.728335177],[0.847550047,-1.103156835,-1.646917941],[-1.249503788,0.192893711,-1.746186441],[-1.415265416,-1.454024229,-0.728335177],[0.374821658,-2.097053835,-0.330921025],[0.192893711,1.746186441,1.249503788],[-0.330921025,-0.374821658,2.097053835],[1.415265416,1.454024229,-0.728335177],[0.728335177,1.415265416,-1.454024229],[-1.646917941,0.847550047,-1.103156835],[-1.746186441,-1.249503788,0.192893711],[1.646917941,-0.847550047,-1.103156835],[-0.728335177,1.415265416,1.454024229],[1.249503788,0.192893711,1.746186441],[2.097053835,-0.330921025,-0.374821658],[-1.103156835,1.646917941,-0.847550047],[0.567715369,-1.977838965,0.643029606],[0.643029606,0.567715369,-1.977838965],[1.454024229,-0.728335177,1.415265416],[1.746186441,1.249503788,0.192893711],[-0.374821658,2.097053835,-0.330921025],[-0.847550047,-1.103156835,1.646917941],[-1.977838965,0.643029606,0.567715369]];
+function prism(n){
+  const R = 1/(2*Math.sin(Math.PI/n)), r = [];
+  for (let k = 0; k < n; k++){ const t = 2*Math.PI*k/n; r.push([R*Math.cos(t), 0.5, R*Math.sin(t)], [R*Math.cos(t), -0.5, R*Math.sin(t)]); }
+  return r;
+}
+function antiprism(n){
+  const R = 1/(2*Math.sin(Math.PI/n)), c = 2*R*Math.sin(Math.PI/(2*n)), h = Math.sqrt(1 - c*c), r = [];
+  for (let k = 0; k < n; k++){
+    const t = 2*Math.PI*k/n, u = t + Math.PI/n;
+    r.push([R*Math.cos(t), h/2, R*Math.sin(t)], [R*Math.cos(u), -h/2, R*Math.sin(u)]);
+  }
+  return r;
+}
+const S2 = Math.SQRT2;
+const POLY = [
+  { id:'tetraeder', g:'p', de:'Tetraeder', en:'Tetrahedron', sym:['T','d'], pts:()=>gen([[1,1,1]],ID,1), desc:'Der einfachste platonische Körper: vier gleichseitige Dreiecke. Zu sich selbst dual.' },
+  { id:'wuerfel', g:'p', de:'Würfel', en:'Cube', sym:['O','h'], pts:()=>gen([[1,1,1]],ID), desc:'Sechs Quadrate, drei an jeder Ecke. Dual zum Oktaeder.' },
+  { id:'oktaeder', g:'p', de:'Oktaeder', en:'Octahedron', sym:['O','h'], pts:()=>uniq(gen([[1,0,0]],ALL)), desc:'Acht Dreiecke, vier an jeder Ecke. Dual zum Würfel.' },
+  { id:'dodekaeder', g:'p', de:'Dodekaeder', en:'Dodecahedron', sym:['I','h'], pts:()=>gen([[1,1,1]],ID).concat(gen([[0,1/PHI,PHI]],EVEN)), desc:'Zwölf regelmäßige Fünfecke, drei an jeder Ecke. Dual zum Ikosaeder.' },
+  { id:'ikosaeder', g:'p', de:'Ikosaeder', en:'Icosahedron', sym:['I','h'], pts:()=>gen([[0,1,PHI]],EVEN), desc:'Zwanzig Dreiecke, fünf an jeder Ecke. Dual zum Dodekaeder.' },
+  { id:'tetraederstumpf', g:'a', de:'Tetraederstumpf', en:'Truncated tetrahedron', sym:['T','d'], pts:()=>uniq(gen([[3,1,1]],ALL,1)), desc:'Ein Tetraeder, dessen Ecken bis zu einem Drittel der Kanten abgeschnitten sind.' },
+  { id:'kuboktaeder', g:'a', de:'Kuboktaeder', en:'Cuboctahedron', sym:['O','h'], pts:()=>uniq(gen([[1,1,0]],ALL)), desc:'Liegt genau zwischen Würfel und Oktaeder. Jede Kante trennt ein Dreieck von einem Quadrat.' },
+  { id:'hexaederstumpf', g:'a', de:'Hexaederstumpf', en:'Truncated cube', sym:['O','h'], pts:()=>uniq(gen([[S2-1,1,1]],ALL)), desc:'Ein Würfel mit abgeschnittenen Ecken: Aus den Quadraten werden regelmäßige Achtecke.' },
+  { id:'oktaederstumpf', g:'a', de:'Oktaederstumpf', en:'Truncated octahedron', sym:['O','h'], pts:()=>gen([[0,1,2]],ALL), desc:'Ein Oktaeder mit abgeschnittenen Ecken. Er füllt den Raum lückenlos.' },
+  { id:'rhombenkuboktaeder', g:'a', de:'Rhombenkuboktaeder', en:'Rhombicuboctahedron', sym:['O','h'], pts:()=>uniq(gen([[1,1,1+S2]],ALL)), desc:'Acht Dreiecke und 18 Quadrate. Entsteht, wenn man die Flächen eines Würfels gleichmäßig nach außen schiebt.' },
+  { id:'grosses-rhombenkuboktaeder', g:'a', de:'Großes Rhombenkuboktaeder', en:'Truncated cuboctahedron', sym:['O','h'], pts:()=>gen([[1,1+S2,1+2*S2]],ALL), desc:'Quadrate, Sechsecke und Achtecke, an jeder Ecke genau eines von jedem.' },
+  { id:'abgeschraegtes-hexaeder', g:'a', de:'Abgeschrägtes Hexaeder', en:'Snub cube', sym:['O',''], pts:()=>gen([[1,1/TRIB,TRIB]],EVEN,0).concat(gen([[1,1/TRIB,TRIB]],ODD,1)), desc:'Chiral: Es gibt eine links- und eine rechtsgängige Form. Gezeigt ist eine davon.' },
+  { id:'ikosidodekaeder', g:'a', de:'Ikosidodekaeder', en:'Icosidodecahedron', sym:['I','h'], pts:()=>uniq(gen([[0,0,PHI],[0.5,PHI/2,PHI*PHI/2]],EVEN)), desc:'Liegt zwischen Dodekaeder und Ikosaeder. Jede Kante trennt ein Dreieck von einem Fünfeck.' },
+  { id:'dodekaederstumpf', g:'a', de:'Dodekaederstumpf', en:'Truncated dodecahedron', sym:['I','h'], pts:()=>gen([[0,1/PHI,2+PHI],[1/PHI,PHI,2*PHI],[PHI,2,PHI+1]],EVEN), desc:'Ein Dodekaeder mit abgeschnittenen Ecken: Aus den Fünfecken werden Zehnecke.' },
+  { id:'ikosaederstumpf', g:'a', de:'Ikosaederstumpf (Fußball)', en:'Truncated icosahedron', sym:['I','h'], pts:()=>gen([[0,1,3*PHI],[1,2+PHI,2*PHI],[PHI,2,PHI**3]],EVEN), desc:'Das Muster des klassischen Fußballs aus 12 Fünfecken und 20 Sechsecken, zugleich die Form des Fullerens C₆₀.' },
+  { id:'rhombenikosidodekaeder', g:'a', de:'Rhombenikosidodekaeder', en:'Rhombicosidodecahedron', sym:['I','h'], pts:()=>gen([[1,1,PHI**3],[PHI**2,PHI,2*PHI],[2+PHI,0,PHI**2]],EVEN), desc:'Dreiecke, Quadrate und Fünfecke, an jeder Ecke in der Folge 3.4.5.4.' },
+  { id:'grosses-rhombenikosidodekaeder', g:'a', de:'Großes Rhombenikosidodekaeder', en:'Truncated icosidodecahedron', sym:['I','h'], pts:()=>gen([[1/PHI,1/PHI,3+PHI],[2/PHI,PHI,1+2*PHI],[1/PHI,PHI**2,-1+3*PHI],[2*PHI-1,2,2+PHI],[PHI,3,2*PHI]],EVEN), desc:'Mit 120 Ecken und 180 Kanten der größte archimedische Körper.' },
+  { id:'abgeschraegtes-dodekaeder', g:'a', de:'Abgeschrägtes Dodekaeder', en:'Snub dodecahedron', sym:['I',''], pts:()=>SNUB_DODECA, desc:'Chiral wie das abgeschrägte Hexaeder: 80 Dreiecke und 12 Fünfecke, fünf Flächen an jeder Ecke.' },
+  { id:'prisma', g:'n', de:'Prisma', en:'Prism', symN:'h', pts:prism, desc:'Zwei regelmäßige n-Ecke, verbunden durch einen Ring aus Quadraten.', special:{4:'Für n = 4 ergibt sich der Würfel.'} },
+  { id:'antiprisma', g:'n', de:'Antiprisma', en:'Antiprism', symN:'d', pts:antiprism, desc:'Zwei gegeneinander verdrehte n-Ecke, verbunden durch einen Ring aus Dreiecken.', special:{3:'Für n = 3 ergibt sich das Oktaeder.'} }
+];
+
+/* ================= Flächen, Kanten und Kennzahlen ================= */
+const sub = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const scl = (a,s) => [a[0]*s, a[1]*s, a[2]*s];
+const nrm = a => scl(a, 1/len(a));
+
+function buildPoly(raw){
+  const n0 = raw.length; let L = Infinity;
+  for (let i = 0; i < n0; i++) for (let j = i+1; j < n0; j++){ const d = len(sub(raw[i], raw[j])); if (d > 1e-9 && d < L) L = d; }
+  const V = raw.map(p => scl(p, 1/L)), n = V.length;     // Kantenlänge 1
+  const nb = V.map(() => []);
+  for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++)
+    if (Math.abs(len(sub(V[i], V[j])) - 1) < 1e-6){ nb[i].push(j); nb[j].push(i); }
+  // Jede Fläche enthält eine Ecke mit zwei ihrer Nachbarn → Ebene prüfen
+  const faces = [], seen = new Set();
+  for (let i = 0; i < n; i++){
+    const N = nb[i];
+    for (let a = 0; a < N.length; a++) for (let b = a+1; b < N.length; b++){
+      let nv = cross(sub(V[N[a]], V[i]), sub(V[N[b]], V[i]));
+      if (len(nv) < 1e-9) continue;
+      nv = nrm(nv);
+      let d = dot(nv, V[i]);
+      if (d < 0){ nv = scl(nv, -1); d = -d; }
+      let ok = true; const ids = [];
+      for (let k = 0; k < n; k++){
+        const s = dot(nv, V[k]) - d;
+        if (s > 1e-6){ ok = false; break; }
+        if (s > -1e-6) ids.push(k);
+      }
+      if (!ok) continue;
+      const key = ids.slice().sort((x,y) => x-y).join(',');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const c = scl(ids.reduce((s,k) => [s[0]+V[k][0], s[1]+V[k][1], s[2]+V[k][2]], [0,0,0]), 1/ids.length);
+      const u = nrm(sub(V[ids[0]], c)), w = cross(nv, u);
+      ids.sort((x,y) => { const p = sub(V[x], c), q = sub(V[y], c); return Math.atan2(dot(p,w), dot(p,u)) - Math.atan2(dot(q,w), dot(q,u)); });
+      let area = 0;
+      for (let k = 1; k < ids.length - 1; k++) area += len(cross(sub(V[ids[k]], V[ids[0]]), sub(V[ids[k+1]], V[ids[0]])))/2;
+      faces.push({ ids, size: ids.length, normal: nv, dist: d, center: c, area });
+    }
+  }
+  const em = new Map();
+  faces.forEach((f, fi) => f.ids.forEach((a, k) => {
+    const b = f.ids[(k+1) % f.size], key = a < b ? a + '-' + b : b + '-' + a;
+    if (!em.has(key)) em.set(key, { a: Math.min(a,b), b: Math.max(a,b), faces: [] });
+    em.get(key).faces.push(fi);
+  }));
+  return { V, faces, edges: [...em.values()] };
+}
+function facts(P){
+  const { V, faces, edges } = P;
+  const counts = {};
+  faces.forEach(f => counts[f.size] = (counts[f.size] || 0) + 1);
+  let vol = 0, surf = 0;
+  faces.forEach(f => { vol += f.area*f.dist/3; surf += f.area; });
+  const R = len(V[0]);
+  const e0 = edges[0];
+  const mid = len(scl([V[e0.a][0]+V[e0.b][0], V[e0.a][1]+V[e0.b][1], V[e0.a][2]+V[e0.b][2]], 0.5));
+  const dih = new Map();
+  edges.forEach(e => {
+    const A = faces[e.faces[0]], B = faces[e.faces[1]];
+    const pair = [A.size, B.size].sort((x,y) => x-y);
+    const ang = 180 - Math.acos(Math.max(-1, Math.min(1, dot(A.normal, B.normal))))*180/Math.PI;
+    const key = pair.join('|') + '@' + ang.toFixed(2);
+    if (!dih.has(key)) dih.set(key, { pair, ang });
+  });
+  // Eckenfigur an Ecke 0, kanonisch (kleinste Rotation/Spiegelung)
+  const vn = nrm(V[0]);
+  const fs = faces.filter(f => f.ids.includes(0));
+  const proj = f => sub(f.center, scl(vn, dot(f.center, vn)));
+  const u = nrm(proj(fs[0])), w = cross(vn, u);
+  const seq = fs.map(f => { const p = proj(f); return { a: Math.atan2(dot(p,w), dot(p,u)), s: f.size }; }).sort((x,y) => x.a - y.a).map(x => x.s);
+  const cand = [];
+  for (let r = 0; r < seq.length; r++){ const rot = seq.slice(r).concat(seq.slice(0, r)); cand.push(rot, rot.slice().reverse()); }
+  const conf = cand.reduce((b, c) => { for (let i = 0; i < c.length; i++) if (c[i] !== b[i]) return c[i] < b[i] ? c : b; return b; });
+  return { V: V.length, E: edges.length, F: faces.length, counts, vol, surf, R, mid, dih: [...dih.values()].sort((x,y) => x.pair[0]-y.pair[0] || x.pair[1]-y.pair[1]), conf: conf.join('.') };
+}
+
+const NGON = {3:['Dreieck','Dreiecke'],4:['Quadrat','Quadrate'],5:['Fünfeck','Fünfecke'],6:['Sechseck','Sechsecke'],7:['Siebeneck','Siebenecke'],
+  8:['Achteck','Achtecke'],9:['Neuneck','Neunecke'],10:['Zehneck','Zehnecke'],11:['Elfeck','Elfecke'],12:['Zwölfeck','Zwölfecke']};
+const ngon = (k, pl) => (NGON[k] || [k + '-Eck', k + '-Ecke'])[pl ? 1 : 0];
+const FACE_HEX = {3:'#B85C4A',4:'#D9A441',5:'#5E9A78',6:'#4B7BAF',7:'#8E6C8A',8:'#7A6AA8',9:'#6F8A4A',10:'#3E8E9C',11:'#9C6B4E',12:'#A0607E'};
+const faceHex = k => FACE_HEX[k] || '#8E6C8A';
+const MONO = '#8FA3B8';
+
+/* ================= Auswahlmenü ================= */
+const sel = $('polySel');
+[['p','Platonische Körper'],['a','Archimedische Körper'],['n','Prismen und Antiprismen']].forEach(([g, label]) => {
+  const og = document.createElement('optgroup'); og.label = label;
+  POLY.filter(p => p.g === g).forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.de; og.appendChild(o); });
+  sel.appendChild(og);
+});
+
+/* ================= 3D-Szene ================= */
+if (typeof THREE === 'undefined' || !THREE.OrbitControls){ $('glError').style.display = 'flex'; return; }
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+catch (e){ $('glError').style.display = 'flex'; return; }
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x000000, 0);
+$('viewport').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6676, 0.65));
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 100);
+const keyL = new THREE.DirectionalLight(0xffffff, 0.75), fillL = new THREE.DirectionalLight(0xffffff, 0.25);
+keyL.position.set(2, 3, 4); fillL.position.set(-4, -1, 2);
+camera.add(keyL, fillL);
+scene.add(camera);
+
+const DIST = 7.2, DISPLAY_R = 1.6;
+const homeDir = new THREE.Vector3(1.0, 0.62, 1.35).normalize();
+camera.position.copy(homeDir).multiplyScalar(DIST);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enablePan = false; controls.enableKeys = false;
+controls.minDistance = 3; controls.maxDistance = 16;
+controls.autoRotateSpeed = 1.2;
+
+new ResizeObserver(() => {
+  const r = $('viewport').getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width/r.height;
+  camera.fov = camera.aspect < 0.9 ? 30/Math.max(0.6, camera.aspect)*0.9 : 30;
+  camera.updateProjectionMatrix();
+}).observe($('viewport'));
+
+const faceMat = new THREE.MeshStandardMaterial({
+  vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.0,
+  side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+});
+const edgeMat = new THREE.MeshStandardMaterial({ color: 0x1b232e, roughness: 0.5, metalness: 0.1 });
+const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
+const sphGeo = new THREE.SphereGeometry(1, 18, 12);
+const yUp = new THREE.Vector3(0, 1, 0);
+
+let solid = null, geo = null, colArr = null, triFace = [], cur = null;
+const edgeGroup = new THREE.Group(), vertGroup = new THREE.Group();
+scene.add(edgeGroup, vertGroup);
+
+const state = { id: 'oktaederstumpf', n: 5, faces: true, edges: true, verts: false, rotate: !reduceMotion,
+  color: 'type', opacity: 1, edge: 0.016, hover: -1 };
+
+function build(){
+  const def = POLY.find(p => p.id === state.id);
+  const P = buildPoly(def.g === 'n' ? def.pts(state.n) : def.pts());
+  const F = facts(P);
+  const k = DISPLAY_R/F.R;
+  const D = P.V.map(v => new THREE.Vector3(v[0]*k, v[1]*k, v[2]*k));
+  cur = { def, P, F, D, k };
+
+  // Flächen als Dreiecksfächer, nicht indiziert → Flächennormalen
+  const pos = []; triFace = [];
+  P.faces.forEach((f, fi) => {
+    for (let t = 1; t < f.size - 1; t++){
+      [f.ids[0], f.ids[t], f.ids[t+1]].forEach(i => pos.push(D[i].x, D[i].y, D[i].z));
+      triFace.push(fi);
+    }
+  });
+  if (solid){ scene.remove(solid); geo.dispose(); }
+  geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  colArr = new Float32Array(pos.length);
+  geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+  geo.computeVertexNormals();
+  solid = new THREE.Mesh(geo, faceMat);
+  scene.add(solid);
+
+  edgeGroup.clear(); vertGroup.clear();
+  P.edges.forEach(e => {
+    const A = D[e.a], B = D[e.b];
+    const m = new THREE.Mesh(cylGeo, edgeMat);
+    const d = B.clone().sub(A);
+    m.userData.len = d.length();
+    m.position.copy(A).add(B).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(yUp, d.normalize());
+    edgeGroup.add(m);
+  });
+  D.forEach(v => { const m = new THREE.Mesh(sphGeo, edgeMat); m.position.copy(v); vertGroup.add(m); });
+
+  state.hover = -1;
+  paint(); apply(); describe();
+}
+
+function paint(){
+  const c = new THREE.Color(), white = new THREE.Color(1, 1, 1);
+  const cache = {};
+  for (let t = 0; t < triFace.length; t++){
+    const fi = triFace[t], f = cur.P.faces[fi];
+    const hex = state.color === 'mono' ? MONO : faceHex(f.size);
+    c.set(cache[hex] || (cache[hex] = hex));
+    if (fi === state.hover) c.lerp(white, 0.35);
+    for (let k = 0; k < 3; k++){ const o = (t*3 + k)*3; colArr[o] = c.r; colArr[o+1] = c.g; colArr[o+2] = c.b; }
+  }
+  geo.attributes.color.needsUpdate = true;
+}
+function apply(){
+  solid.visible = state.faces;
+  edgeGroup.visible = state.edges;
+  vertGroup.visible = state.verts;
+  controls.autoRotate = state.rotate;
+  faceMat.opacity = state.opacity;
+  faceMat.transparent = state.opacity < 0.999;
+  faceMat.depthWrite = !faceMat.transparent;
+  faceMat.needsUpdate = true;
+  const r = state.edge;
+  edgeGroup.children.forEach(m => m.scale.set(r, m.userData.len, r));
+  vertGroup.children.forEach(m => m.scale.setScalar(r*1.7));
+  $('opOut').textContent = fmt(state.opacity, 2);
+  $('edOut').textContent = fmt(state.edge, 3);
+  $('opRange').disabled = !state.faces;
+}
+
+/* ================= Beschreibung, Legende, Kennzahlen ================= */
+function describe(){
+  const { def, F } = cur;
+  const isN = def.g === 'n';
+  $('tBig').textContent = isN ? `${def.de} (n = ${state.n})` : def.de;
+  $('tSub').textContent = isN ? `${def.en}, n = ${state.n}` : def.en;
+  $('nRow').hidden = !isN;
+  $('nOut').textContent = state.n;
+  $('desc').textContent = def.desc + (isN && def.special && def.special[state.n] ? ' ' + def.special[state.n] : '');
+
+  const sizes = Object.keys(F.counts).map(Number).sort((a,b) => a-b);
+  $('legend').innerHTML = state.color === 'mono'
+    ? `<li><span class="swatch" style="background:${MONO}"></span>alle ${F.F} Flächen</li>`
+    : sizes.map(s => `<li><span class="swatch" style="background:${faceHex(s)}"></span>${F.counts[s]} ${ngon(s, F.counts[s] !== 1)}</li>`).join('');
+
+  const sym = isN ? `<i>D</i><sub>${state.n}${def.symN}</sub>` : `<i>${def.sym[0]}</i>${def.sym[1] ? '<sub>' + def.sym[1] + '</sub>' : ''}`;
+  const faceList = sizes.slice().reverse().map(s => `${F.counts[s]} ${ngon(s, F.counts[s] !== 1)}`).join(', ');
+  const dih = F.dih.map(d => `${d.pair.join('|')}: ${fmt(d.ang, 2)}°`).join('<br>');
+  const rows = [
+    ['Ecken', F.V], ['Kanten', F.E], ['Flächen', `${F.F} (${faceList})`],
+    ['Euler', `${F.V} − ${F.E} + ${F.F} = ${F.V - F.E + F.F}`],
+    ['Eckenfigur', F.conf], ['Symmetrie', sym],
+    ['Volumen', `≈ ${fmt(F.vol, 3)} <i>a</i>³`], ['Oberfläche', `≈ ${fmt(F.surf, 3)} <i>a</i>²`],
+    ['Umkugelradius', `≈ ${fmt(F.R, 3)} <i>a</i>`], ['Kantenkugel', `≈ ${fmt(F.mid, 3)} <i>a</i>`],
+    ['Diederwinkel', dih]
+  ];
+  $('facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  // Ansicht-Schaltflächen: je Flächentyp, dazu Ecke und Kante
+  const vs = $('viewSeg'); vs.innerHTML = '';
+  const addBtn = (label, dir) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+    b.addEventListener('click', () => { state.rotate = false; $('cRotate').checked = false; apply(); flyTo(dir()); });
+    vs.appendChild(b);
+  };
+  sizes.forEach(s => addBtn(ngon(s, false), () => {
+    const f = cur.P.faces.find(f => f.size === s);
+    return new THREE.Vector3(...f.normal);
+  }));
+  addBtn('Ecke', () => cur.D[0].clone());
+  addBtn('Kante', () => { const e = cur.P.edges[0]; return cur.D[e.a].clone().add(cur.D[e.b]); });
+
+  readout.textContent = HINT;
+}
+
+/* ================= Kamerafahrten ================= */
+let tween = null;
+function flyTo(dirVec){
+  const d = dirVec.clone().normalize();
+  if (Math.abs(d.y) > 0.999){ d.x += 0.002; d.z += 0.002; d.normalize(); }  // Pol der Orbitsteuerung meiden
+  const r = camera.position.length(), target = d.multiplyScalar(r);
+  if (reduceMotion){ camera.position.copy(target); controls.update(); return; }
+  const from = camera.position.clone().normalize(), to = target.clone().normalize(), t0 = performance.now(), dur = 650;
+  tween = now => {
+    let t = Math.min(1, (now - t0)/dur); t = t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+    const p = from.clone().lerp(to, t);
+    if (p.lengthSq() < 1e-6) p.set(0.01, 0.01, 1);
+    camera.position.copy(p.normalize().multiplyScalar(r));
+    if (t >= 1) tween = null;
+  };
+}
+
+/* ================= Hover ================= */
+const readout = $('readout');
+const HINT = 'Zeiger auf eine Fläche bewegen, um sie zu bestimmen.';
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let ptrInside = false, dirty = false;
+const cvs = renderer.domElement;
+cvs.addEventListener('pointermove', e => {
+  const r = cvs.getBoundingClientRect();
+  ptr.set((e.clientX - r.left)/r.width*2 - 1, -((e.clientY - r.top)/r.height)*2 + 1);
+  ptrInside = true; dirty = true;
+});
+cvs.addEventListener('pointerleave', () => { ptrInside = false; setHover(-1); });
+controls.addEventListener('change', () => { if (ptrInside) dirty = true; });
+function setHover(fi){
+  if (fi === state.hover) return;
+  state.hover = fi; paint();
+  if (fi < 0){ readout.textContent = HINT; return; }
+  const f = cur.P.faces[fi], cnt = cur.F.counts[f.size];
+  readout.innerHTML = `<b>${ngon(f.size, false)}</b>, eines von ${cnt}, Flächeninhalt <span class="math">≈ ${fmt(f.area, 3)} <i>a</i>²</span>`;
+}
+function hover(){
+  if (!state.faces){ setHover(-1); return; }
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(solid, false)[0];
+  setHover(hit ? triFace[hit.faceIndex] : -1);
+}
+
+/* ================= Bedienung ================= */
+function themeEdges(){
+  const c = getComputedStyle(document.documentElement).getPropertyValue('--edge').trim() || '#1B232E';
+  edgeMat.color.set(c);
+}
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeEdges);
+new MutationObserver(themeEdges).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+sel.value = state.id;
+sel.addEventListener('change', () => { state.id = sel.value; build(); });
+$('nRange').value = state.n;
+$('nRange').addEventListener('input', e => { state.n = +e.target.value; build(); });
+
+[['cFaces','faces'], ['cEdges','edges'], ['cVerts','verts'], ['cRotate','rotate']].forEach(([id, k]) => {
+  const el = $(id); el.checked = state[k];
+  el.addEventListener('change', () => { state[k] = el.checked; apply(); if (k === 'faces') dirty = ptrInside; });
+});
+$('opRange').addEventListener('input', e => { state.opacity = +e.target.value; apply(); });
+$('edRange').addEventListener('input', e => { state.edge = +e.target.value; apply(); });
+
+const colorLabels = [...document.querySelectorAll('#colorSeg label')];
+function setColor(v){
+  state.color = v;
+  colorLabels.forEach(lb => { const i = lb.querySelector('input'); i.checked = i.value === v; lb.classList.toggle('on', i.checked); });
+  if (cur){ paint(); describe(); }
+}
+document.querySelectorAll('input[name=color]').forEach(i => i.addEventListener('change', () => setColor(i.value)));
+
+$('resetView').addEventListener('click', () => {
+  tween = null;
+  camera.position.copy(homeDir).multiplyScalar(DIST);
+  controls.target.set(0, 0, 0); controls.update();
+});
+
+/* ================= Start ================= */
+setColor('type');
+themeEdges();
+build();
+(function loop(now){
+  requestAnimationFrame(loop);
+  if (tween) tween(now);
+  controls.update();
+  if (dirty){ dirty = false; hover(); }
+  renderer.render(scene, camera);
+})(performance.now());
+})();
+</script>
+</body>
+</html>
